@@ -79,14 +79,14 @@ func generate_world() -> Dictionary:
 	l2.fixtures = ScheduleGen.build_fixtures(l2.club_ids)
 	return world
 
-## Erzeugt einen kompletten Kader für einen Verein (3 TW, 8 AB, 8 MF, 5 ST).
+## Erzeugt einen kompletten Kader für einen Verein (24 Spieler über alle Positionen).
 func _generate_squad(world: Dictionary, club: ClubData) -> void:
-	var plan := {"TW": 3, "AB": 8, "MF": 8, "ST": 5}
+	var plan := {"TW": 3, "IV": 4, "LV": 2, "RV": 2, "DM": 3, "ZM": 3, "OM": 2, "LA": 1, "RA": 1, "MS": 3}
 	var star_given := false
 	for pos in plan:
 		for i in plan[pos]:
 			var boost := 0
-			if not star_given and pos == "ST":
+			if not star_given and pos == "MS":
 				boost = 8
 				star_given = true
 			_create_player(world, club, pos, boost)
@@ -105,7 +105,7 @@ func _create_player(world: Dictionary, club: ClubData, pos: String, boost: int =
 	p.form = randf_range(0.9, 1.1)
 	p.stamina = clampi(randi_range(45, 90) - (8 if p.age >= 31 else 0), 30, 95)
 	p.contract_years = randi_range(1, 4)
-	p.salary = maxi(int(p.market_value() / 40.0 / 1000.0) * 1000, 5000)
+	p.salary = p.expected_salary()
 	p.club_id = club.id
 	world.players[p.id] = p
 	club.player_ids.append(p.id)
@@ -127,7 +127,7 @@ func create_youth_player(world: Dictionary, club: ClubData, pos: String, bonus: 
 	p.form = randf_range(0.9, 1.1)
 	p.stamina = randi_range(55, 90)
 	p.contract_years = 3
-	p.salary = maxi(int(p.market_value() / 40.0 / 1000.0) * 1000, 3000)
+	p.salary = p.expected_salary()
 	p.club_id = club.id
 	world.players[p.id] = p
 	club.player_ids.append(p.id)

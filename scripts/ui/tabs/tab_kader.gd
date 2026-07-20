@@ -2,7 +2,6 @@ class_name TabKader
 extends TabBase
 ## Kader als moderne Kartenliste. Rechtsklick (oder Doppelklick) öffnet das Spielerprofil.
 
-const POS_ORDER := {"TW": 0, "AB": 1, "MF": 2, "ST": 3}
 const SORTS := ["Position", "Stärke", "Frische", "Form", "Marktwert", "Note"]
 
 var _sort_select: OptionButton
@@ -63,8 +62,10 @@ func refresh() -> void:
 			squad.sort_custom(func(a, b): return a.last_rating < b.last_rating if a.last_rating > 0 and b.last_rating > 0 else a.last_rating > b.last_rating)
 		_:
 			squad.sort_custom(func(a, b):
-				if POS_ORDER[a.pos] != POS_ORDER[b.pos]:
-					return POS_ORDER[a.pos] < POS_ORDER[b.pos]
+				var order_a: int = PlayerData.POSITIONS.find(a.pos)
+				var order_b: int = PlayerData.POSITIONS.find(b.pos)
+				if order_a != order_b:
+					return order_a < order_b
 				return a.strength > b.strength)
 	for p in squad:
 		_list.add_child(_player_row(p, c))
@@ -86,7 +87,7 @@ func _player_row(p: PlayerData, c: ClubData) -> PanelContainer:
 	line.add_theme_constant_override("separation", 14)
 	panel.add_child(line)
 
-	line.add_child(UITheme.mini_pill(p.pos, PlayerProfileDialog.POS_COLORS[p.pos], Color.WHITE, 42))
+	line.add_child(UITheme.mini_pill(p.pos, PlayerProfileDialog.pos_color(p.pos), Color.WHITE, 42))
 
 	var name_box := VBoxContainer.new()
 	name_box.add_theme_constant_override("separation", 0)
@@ -102,7 +103,8 @@ func _player_row(p: PlayerData, c: ClubData) -> PanelContainer:
 	if is_starter:
 		name_row.add_child(UITheme.mini_pill("Startelf", Color("#14532d"), Color("#bbf7d0"), 60))
 	var sub := Label.new()
-	sub.text = "%d Jahre  ·  Vertrag %d J.  ·  %s/Monat" % [p.age, p.contract_years, Fmt.money(p.salary)]
+	sub.text = "%s  ·  %d Jahre  ·  Vertrag bis %s  ·  %s/Monat" % [
+		PlayerData.POSITION_NAMES[p.pos], p.age, Game.contract_until(p), Fmt.money(p.salary)]
 	sub.add_theme_font_size_override("font_size", 13)
 	sub.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	name_box.add_child(sub)

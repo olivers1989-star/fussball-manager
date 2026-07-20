@@ -22,7 +22,7 @@ func _ready() -> void:
 		assert(pl0.attributes.size() == PlayerData.ATTRIBUTES.size())
 		assert(pl0.strength >= 25 and pl0.strength <= 96)
 	var tw_sample: PlayerData = Game.my_club().players_by_pos(Game.world.players, "TW")[0]
-	var st_sample: PlayerData = Game.my_club().players_by_pos(Game.world.players, "ST")[0]
+	var st_sample: PlayerData = Game.my_club().players_by_pos(Game.world.players, "MS")[0]
 	assert(tw_sample.attr("reflexe") > tw_sample.attr("abschluss"))
 	assert(st_sample.attr("abschluss") > st_sample.attr("reflexe"))
 	print("Attribut-Check OK (TW-Reflexe %d, ST-Abschluss %d)" % [tw_sample.attr("reflexe"), st_sample.attr("abschluss")])

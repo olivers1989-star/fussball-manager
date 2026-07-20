@@ -2,12 +2,14 @@ class_name ClubData
 extends RefCounted
 ## Ein Verein mit Kader, Finanzen, Stadion und Taktik.
 
+## Formationen als konkrete Positions-Slots (11 pro Formation).
 const FORMATIONS := {
-	"4-4-2": {"TW": 1, "AB": 4, "MF": 4, "ST": 2},
-	"4-3-3": {"TW": 1, "AB": 4, "MF": 3, "ST": 3},
-	"4-5-1": {"TW": 1, "AB": 4, "MF": 5, "ST": 1},
-	"3-5-2": {"TW": 1, "AB": 3, "MF": 5, "ST": 2},
-	"5-3-2": {"TW": 1, "AB": 5, "MF": 3, "ST": 2},
+	"4-4-2": ["TW", "LV", "IV", "IV", "RV", "DM", "ZM", "ZM", "OM", "MS", "MS"],
+	"4-3-3": ["TW", "LV", "IV", "IV", "RV", "DM", "ZM", "OM", "LA", "MS", "RA"],
+	"4-2-3-1": ["TW", "LV", "IV", "IV", "RV", "DM", "DM", "OM", "LA", "RA", "MS"],
+	"4-5-1": ["TW", "LV", "IV", "IV", "RV", "DM", "DM", "ZM", "OM", "OM", "MS"],
+	"3-5-2": ["TW", "IV", "IV", "IV", "DM", "DM", "ZM", "OM", "OM", "MS", "MS"],
+	"5-3-2": ["TW", "LV", "IV", "IV", "IV", "RV", "DM", "ZM", "OM", "MS", "MS"],
 }
 
 var id: int = 0
@@ -42,27 +44,53 @@ func players_by_pos(all_players: Dictionary, p_pos: String) -> Array:
 	result.sort_custom(func(a, b): return a.rating() > b.rating())
 	return result
 
-## Stellt die beste fitte Elf zusammen (Stärke × Form × Frische, keine Verletzten).
+func players_by_group(all_players: Dictionary, p_group: String) -> Array:
+	var result: Array = []
+	for pid in player_ids:
+		var p: PlayerData = all_players[pid]
+		if p.group() == p_group:
+			result.append(p)
+	result.sort_custom(func(a, b): return a.rating() > b.rating())
+	return result
+
+## Stellt die beste fitte Elf für die Formations-Slots zusammen:
+## erst exakte Position, dann gleiche Positionsgruppe, zuletzt beste Restspieler.
 func best_eleven(all_players: Dictionary, p_formation: String = "") -> Array:
-	var counts: Dictionary = FORMATIONS[p_formation if p_formation != "" else formation]
+	var slots: Array = FORMATIONS[p_formation if p_formation != "" else formation]
+	var available := players(all_players).filter(func(p): return p.is_available())
+	available.sort_custom(func(a, b): return a.effective_rating() > b.effective_rating())
 	var eleven: Array = []
 	var used := {}
-	for pos in PlayerData.POSITIONS:
-		var pool := players_by_pos(all_players, pos).filter(func(p): return p.is_available())
-		pool.sort_custom(func(a, b): return a.effective_rating() > b.effective_rating())
-		var needed: int = counts[pos]
-		for i in mini(needed, pool.size()):
-			eleven.append(pool[i].id)
-			used[pool[i].id] = true
-	# Falls eine Position unterbesetzt ist: mit den besten fitten Restspielern auffüllen
-	if eleven.size() < 11:
-		var rest := players(all_players).filter(func(p): return not used.has(p.id) and p.is_available())
-		rest.sort_custom(func(a, b): return a.effective_rating() > b.effective_rating())
-		for p in rest:
-			if eleven.size() >= 11:
-				break
-			eleven.append(p.id)
+	var open_slots: Array = []
+	# 1. Durchgang: exakte Position
+	for slot in slots:
+		var picked := _pick_for_slot(available, used, func(p): return p.pos == slot)
+		if picked > 0:
+			eleven.append(picked)
+		else:
+			open_slots.append(slot)
+	# 2. Durchgang: gleiche Positionsgruppe
+	var still_open: Array = []
+	for slot in open_slots:
+		var group: String = PlayerData.GROUP_OF[slot]
+		var picked := _pick_for_slot(available, used, func(p): return p.group() == group)
+		if picked > 0:
+			eleven.append(picked)
+		else:
+			still_open.append(slot)
+	# 3. Durchgang: beste Restspieler
+	for slot in still_open:
+		var picked := _pick_for_slot(available, used, func(_p): return true)
+		if picked > 0:
+			eleven.append(picked)
 	return eleven
+
+func _pick_for_slot(available: Array, used: Dictionary, predicate: Callable) -> int:
+	for p in available:
+		if not used.has(p.id) and predicate.call(p):
+			used[p.id] = true
+			return p.id
+	return -1
 
 ## Gültige Startelf für ein Spiel: gespeicherte Aufstellung (sofern komplett und fit),
 ## sonst automatisch die beste Elf.

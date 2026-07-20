@@ -3,7 +3,10 @@ extends AcceptDialog
 ## Spielerprofil: per Rechtsklick auf einen Spieler zu öffnen.
 ## Zeigt Attribute als Balken, Zustand, Vertrag und Saisonstatistik.
 
-const POS_COLORS := {"TW": Color("#7c3aed"), "AB": Color("#2563eb"), "MF": Color("#16a34a"), "ST": Color("#dc2626")}
+const GROUP_COLORS := {"TW": Color("#7c3aed"), "AB": Color("#2563eb"), "MF": Color("#16a34a"), "ST": Color("#dc2626")}
+
+static func pos_color(pos: String) -> Color:
+	return GROUP_COLORS[PlayerData.GROUP_OF[pos]]
 
 var _pos_pill: Label
 var _name_label: Label
@@ -24,7 +27,7 @@ func _init() -> void:
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 12)
 	box.add_child(header)
-	_pos_pill = UITheme.pill("MF", POS_COLORS.MF)
+	_pos_pill = UITheme.pill("ZM", GROUP_COLORS.MF)
 	_pos_pill.add_theme_font_size_override("font_size", 18)
 	header.add_child(_pos_pill)
 	_name_label = Label.new()
@@ -138,16 +141,16 @@ func _set_bar(store: Dictionary, key: String, value: float, text: String, max_va
 func open_for(pid: int) -> void:
 	var p: PlayerData = Game.world.players[pid]
 	var club := Game.club(p.club_id)
-	title = "Spielerprofil – %s" % p.full_name()
+	title = "Spielerprofil – %s (%s)" % [p.full_name(), PlayerData.POSITION_NAMES[p.pos]]
 	_pos_pill.text = p.pos
-	_pos_pill.add_theme_stylebox_override("normal", UITheme.box(POS_COLORS[p.pos], 999))
+	_pos_pill.add_theme_stylebox_override("normal", UITheme.box(pos_color(p.pos), 999))
 	_name_label.text = p.full_name()
 	_club_label.text = club.name
 	_club_label.add_theme_color_override("font_color", Color(club.color))
 
 	_info.age.text = "%d Jahre" % p.age
 	_info.strength.text = str(p.strength)
-	_info.contract.text = "noch %d Jahr%s" % [p.contract_years, "" if p.contract_years == 1 else "e"]
+	_info.contract.text = "bis %s" % Game.contract_until(p)
 	_info.salary.text = "%s/Monat" % Fmt.money(p.salary)
 	_info.value.text = Fmt.money(p.market_value())
 	if p.is_injured():

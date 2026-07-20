@@ -93,9 +93,10 @@ func _fill_list(list: ItemList, ids: Array) -> void:
 	sorted.sort_custom(func(a, b):
 		var pa: PlayerData = Game.get_player(a)
 		var pb: PlayerData = Game.get_player(b)
-		var order := {"TW": 0, "AB": 1, "MF": 2, "ST": 3}
-		if order[pa.pos] != order[pb.pos]:
-			return order[pa.pos] < order[pb.pos]
+		var order_a: int = PlayerData.POSITIONS.find(pa.pos)
+		var order_b: int = PlayerData.POSITIONS.find(pb.pos)
+		if order_a != order_b:
+			return order_a < order_b
 		return pa.rating() > pb.rating())
 	for pid in sorted:
 		var p := Game.get_player(pid)
@@ -137,8 +138,8 @@ func _on_swap() -> void:
 		else:
 			_message.text = "%s ist gesperrt (noch %d Spieltage)." % [p_in.full_name(), p_in.suspended_matchdays]
 		return
-	if p_out.pos != p_in.pos:
-		_message.text = "Tausch nur auf gleicher Position möglich (%s gegen %s)." % [p_out.pos, p_in.pos]
+	if p_out.group() != p_in.group():
+		_message.text = "Tausch nur innerhalb der Positionsgruppe möglich (%s gegen %s)." % [p_out.pos, p_in.pos]
 		return
 	var c := Game.my_club()
 	var idx := c.lineup.find(pid_out)

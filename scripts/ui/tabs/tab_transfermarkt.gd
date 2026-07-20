@@ -80,13 +80,13 @@ func _init() -> void:
 					_profile.open_for(int(item.get_metadata(0))))
 
 func refresh() -> void:
-	var wanted_pos := _pos_filter.get_item_text(_pos_filter.selected)
+	var wanted_group := _pos_filter.get_item_text(_pos_filter.selected)
 	var candidates: Array = []
 	for pid in Game.world.players:
 		var p: PlayerData = Game.world.players[pid]
 		if p.club_id == Game.my_club_id:
 			continue
-		if wanted_pos != "Alle" and p.pos != wanted_pos:
+		if wanted_group != "Alle" and p.group() != wanted_group:
 			continue
 		candidates.append(p)
 	candidates.sort_custom(func(a, b): return a.market_value() > b.market_value())

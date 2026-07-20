@@ -15,7 +15,7 @@ func _ready() -> void:
 	get_viewport().get_texture().get_image().save_png("user://kader_shot.png")
 	# Spielerprofil des besten Stürmers öffnen
 	var kader = hub._screens["Kader"]
-	var st: PlayerData = Game.my_club().players_by_pos(Game.world.players, "ST")[0]
+	var st: PlayerData = Game.my_club().players_by_pos(Game.world.players, "MS")[0]
 	kader._profile.open_for(st.id)
 	await get_tree().create_timer(1.0).timeout
 	get_viewport().get_texture().get_image().save_png("user://profil_shot.png")

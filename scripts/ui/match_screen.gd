@@ -356,9 +356,10 @@ func _fill_player_list(list: ItemList, ids: Array, prefix: String) -> void:
 	sorted.sort_custom(func(a, b):
 		var pa: PlayerData = Game.get_player(a)
 		var pb: PlayerData = Game.get_player(b)
-		var order := {"TW": 0, "AB": 1, "MF": 2, "ST": 3}
-		if order[pa.pos] != order[pb.pos]:
-			return order[pa.pos] < order[pb.pos]
+		var order_a: int = PlayerData.POSITIONS.find(pa.pos)
+		var order_b: int = PlayerData.POSITIONS.find(pb.pos)
+		if order_a != order_b:
+			return order_a < order_b
 		return pa.rating() > pb.rating())
 	for pid in sorted:
 		var p := Game.get_player(pid)

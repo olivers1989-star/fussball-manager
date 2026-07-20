@@ -2,7 +2,19 @@ class_name PlayerData
 extends RefCounted
 ## Ein einzelner Spieler mit Attributen, Vertrag und Saisonstatistik.
 
-const POSITIONS := ["TW", "AB", "MF", "ST"]
+## Detaillierte Positionen. Für Spielmechanik (Engine, Wechselregeln) zählt die
+## Positionsgruppe (TW/AB/MF/ST), fürs Profil und die Aufstellung die genaue Position.
+const POSITIONS := ["TW", "LV", "IV", "RV", "DM", "ZM", "OM", "LA", "RA", "MS"]
+const POSITION_NAMES := {
+	"TW": "Torwart", "LV": "Linker Verteidiger", "IV": "Innenverteidiger",
+	"RV": "Rechter Verteidiger", "DM": "Defensives Mittelfeld", "ZM": "Zentrales Mittelfeld",
+	"OM": "Offensives Mittelfeld", "LA": "Linksaußen", "RA": "Rechtsaußen", "MS": "Mittelstürmer",
+}
+const GROUP_OF := {
+	"TW": "TW", "LV": "AB", "IV": "AB", "RV": "AB",
+	"DM": "MF", "ZM": "MF", "OM": "MF", "LA": "ST", "RA": "ST", "MS": "ST",
+}
+const GROUPS := ["TW", "AB", "MF", "ST"]
 
 ## Spielerattribute (1–96). Die Gesamtstärke wird daraus positionsabhängig berechnet,
 ## und die Match-Engine rechnet direkt mit den Attributen.
@@ -20,23 +32,35 @@ const ATTRIBUTES := {
 ## Gewichtung der Attribute für die Gesamtstärke je Position.
 const STRENGTH_WEIGHTS := {
 	"TW": {"reflexe": 0.6, "stellung": 0.25, "tempo": 0.1, "passen": 0.05},
-	"AB": {"zweikampf": 0.3, "stellung": 0.25, "kopfball": 0.2, "tempo": 0.15, "passen": 0.05, "technik": 0.05},
-	"MF": {"passen": 0.3, "technik": 0.25, "stellung": 0.15, "zweikampf": 0.15, "tempo": 0.1, "abschluss": 0.05},
-	"ST": {"abschluss": 0.35, "tempo": 0.2, "technik": 0.15, "kopfball": 0.15, "stellung": 0.05, "passen": 0.05, "zweikampf": 0.05},
+	"IV": {"zweikampf": 0.3, "stellung": 0.25, "kopfball": 0.25, "tempo": 0.1, "passen": 0.05, "technik": 0.05},
+	"LV": {"tempo": 0.25, "zweikampf": 0.25, "stellung": 0.2, "passen": 0.15, "technik": 0.1, "kopfball": 0.05},
+	"RV": {"tempo": 0.25, "zweikampf": 0.25, "stellung": 0.2, "passen": 0.15, "technik": 0.1, "kopfball": 0.05},
+	"DM": {"zweikampf": 0.3, "passen": 0.25, "stellung": 0.2, "technik": 0.15, "tempo": 0.1},
+	"ZM": {"passen": 0.3, "technik": 0.25, "stellung": 0.15, "zweikampf": 0.15, "tempo": 0.1, "abschluss": 0.05},
+	"OM": {"technik": 0.3, "passen": 0.3, "abschluss": 0.15, "tempo": 0.15, "stellung": 0.05, "zweikampf": 0.05},
+	"LA": {"tempo": 0.3, "technik": 0.25, "abschluss": 0.2, "passen": 0.15, "kopfball": 0.05, "stellung": 0.05},
+	"RA": {"tempo": 0.3, "technik": 0.25, "abschluss": 0.2, "passen": 0.15, "kopfball": 0.05, "stellung": 0.05},
+	"MS": {"abschluss": 0.35, "kopfball": 0.2, "tempo": 0.2, "technik": 0.1, "stellung": 0.05, "passen": 0.05, "zweikampf": 0.05},
 }
 
 ## Typisches Attributprofil je Position (Abweichung vom Zielwert).
 const ATTR_OFFSETS := {
 	"TW": {"reflexe": 6, "stellung": 2, "tempo": -12, "technik": -8, "passen": -6, "abschluss": -20, "zweikampf": -10, "kopfball": -8},
-	"AB": {"zweikampf": 5, "stellung": 4, "kopfball": 4, "tempo": -2, "technik": -4, "passen": -2, "abschluss": -12, "reflexe": -30},
-	"MF": {"passen": 5, "technik": 4, "stellung": 1, "tempo": 0, "zweikampf": 0, "abschluss": -4, "kopfball": -4, "reflexe": -30},
-	"ST": {"abschluss": 6, "tempo": 3, "technik": 1, "kopfball": 2, "passen": -3, "zweikampf": -8, "stellung": -4, "reflexe": -30},
+	"IV": {"zweikampf": 6, "kopfball": 6, "stellung": 4, "tempo": -4, "technik": -4, "passen": -3, "abschluss": -14, "reflexe": -30},
+	"LV": {"tempo": 4, "zweikampf": 2, "stellung": 2, "passen": 0, "technik": -2, "kopfball": -2, "abschluss": -10, "reflexe": -30},
+	"RV": {"tempo": 4, "zweikampf": 2, "stellung": 2, "passen": 0, "technik": -2, "kopfball": -2, "abschluss": -10, "reflexe": -30},
+	"DM": {"zweikampf": 5, "stellung": 4, "passen": 2, "technik": 0, "tempo": -2, "kopfball": 0, "abschluss": -8, "reflexe": -30},
+	"ZM": {"passen": 5, "technik": 3, "stellung": 1, "zweikampf": 1, "tempo": 0, "abschluss": -4, "kopfball": -4, "reflexe": -30},
+	"OM": {"technik": 5, "passen": 5, "tempo": 1, "abschluss": 0, "zweikampf": -6, "kopfball": -5, "stellung": -3, "reflexe": -30},
+	"LA": {"tempo": 6, "technik": 3, "abschluss": 1, "passen": 0, "zweikampf": -8, "kopfball": -4, "stellung": -5, "reflexe": -30},
+	"RA": {"tempo": 6, "technik": 3, "abschluss": 1, "passen": 0, "zweikampf": -8, "kopfball": -4, "stellung": -5, "reflexe": -30},
+	"MS": {"abschluss": 7, "kopfball": 4, "tempo": 2, "technik": 0, "stellung": -2, "passen": -4, "zweikampf": -8, "reflexe": -30},
 }
 
 var id: int = 0
 var first_name: String = ""
 var last_name: String = ""
-var pos: String = "MF"
+var pos: String = "ZM"
 var age: int = 25
 var strength: int = 60        # Gesamtstärke, aus den Attributen berechnet
 var attributes := {}          # Attribut-Schlüssel -> Wert (siehe ATTRIBUTES)
@@ -60,6 +84,14 @@ func full_name() -> String:
 
 func attr(key: String) -> int:
 	return int(attributes.get(key, 40))
+
+## Positionsgruppe (TW/AB/MF/ST) – Grundlage für Engine und Wechselregeln.
+func group() -> String:
+	return GROUP_OF[pos]
+
+## Marktgerechtes Monatsgehalt: ca. 2,5 % des Marktwerts.
+func expected_salary() -> int:
+	return maxi(int(market_value() / 40.0 / 1000.0) * 1000, 3000)
 
 ## Erzeugt ein Attributset um einen Zielwert herum, geprägt vom Positionsprofil.
 static func make_attributes(p_pos: String, target: int) -> Dictionary:
@@ -135,6 +167,9 @@ static func from_dict(d: Dictionary) -> PlayerData:
 	p.last_name = d.ln
 	p.pos = d.pos
 	p.age = int(d.age)
+	# Alte Spielstände mit Positionsgruppen auf detaillierte Positionen migrieren
+	if p.pos in ["AB", "MF", "ST"]:
+		p.pos = {"AB": "IV", "MF": "ZM", "ST": "MS"}[p.pos]
 	p.strength = int(d.str)
 	var saved_attrs: Dictionary = d.get("attrs", {})
 	if saved_attrs.is_empty():

@@ -42,7 +42,7 @@ func _ready() -> void:
 	var sub_done := false
 	for pid_out in lineup:
 		for pid_in in bench:
-			if Game.get_player(pid_out).pos == Game.get_player(pid_in).pos:
+			if Game.get_player(pid_out).group() == Game.get_player(pid_in).group():
 				assert(match_screen._my_sim.substitute(match_screen._my_home, pid_out, pid_in) == "")
 				sub_done = true
 				break

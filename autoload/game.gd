@@ -140,6 +140,13 @@ func _board_goal_for(c: ClubData) -> Dictionary:
 func manager_age() -> int:
 	return int(world.season_year) - int(manager_birthday.year)
 
+## Vertragsende als echtes Datum: Verträge laufen immer bis zum 30. Juni.
+func contract_until(p: PlayerData) -> String:
+	return "30.06.%d" % (int(world.season_year) + p.contract_years)
+
+func coach_contract_until() -> String:
+	return "30.06.%d" % (int(world.season_year) + coach_contract_years)
+
 func skill(key: String) -> int:
 	return int(skills.get(key, 1))
 
@@ -568,7 +575,7 @@ func end_season() -> Dictionary:
 		elif p.contract_years <= 0:
 			# Automatische Verlängerung (KI wie Spieler) – Vertragsverhandlungen kommen in einer späteren Ausbaustufe
 			p.contract_years = randi_range(2, 3)
-			p.salary = maxi(int(p.market_value() / 40.0 / 1000.0) * 1000, 3000)
+			p.salary = p.expected_salary()
 		# Entwicklung: Junge verbessern Attribute, Alte bauen ab
 		if p.age <= 23:
 			p.develop(randi_range(1, 2), randi_range(1, 3))
@@ -584,7 +591,7 @@ func end_season() -> Dictionary:
 		world.players.erase(pid)
 
 	# Kader mit Jugendspielern auffüllen
-	var min_per_pos := {"TW": 2, "AB": 6, "MF": 6, "ST": 3}
+	var min_per_pos := {"TW": 2, "IV": 3, "LV": 1, "RV": 1, "DM": 2, "ZM": 2, "OM": 1, "LA": 1, "RA": 1, "MS": 2}
 	for cid in world.clubs:
 		var c: ClubData = world.clubs[cid]
 		# Fähigkeit "Jugendarbeit": der eigene Nachwuchs kommt stärker aus der Akademie
@@ -647,6 +654,7 @@ func buy_player(pid: int) -> String:
 	buyer.budget -= price
 	p.club_id = my_club_id
 	p.contract_years = 3
+	p.salary = p.expected_salary()
 	log_transaction("Transfer: %s verpflichtet" % p.full_name(), -price)
 	return ""
 

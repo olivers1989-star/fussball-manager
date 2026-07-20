@@ -119,8 +119,8 @@ func substitute(is_home: bool, pid_out: int, pid_in: int) -> String:
 	var p_in: PlayerData = players[pid_in]
 	if not p_in.is_available():
 		return "%s ist nicht einsatzbereit (verletzt oder gesperrt)." % p_in.full_name()
-	if p_out.pos != p_in.pos:
-		return "Wechsel nur auf gleicher Position möglich (%s gegen %s)." % [p_out.pos, p_in.pos]
+	if p_out.group() != p_in.group():
+		return "Wechsel nur innerhalb der Positionsgruppe möglich (%s gegen %s)." % [p_out.pos, p_in.pos]
 	lineup[lineup.find(pid_out)] = pid_in
 	off.append(pid_out)
 	_appeared[pid_in] = true
@@ -238,7 +238,7 @@ func _pick_scorer(lineup: Array) -> PlayerData:
 	for pid in lineup:
 		var p: PlayerData = players[pid]
 		# Wer besser abschließt, trifft öfter – der Knipser-Effekt
-		var w: float = weights[p.pos] * (p.attr("abschluss") / 60.0)
+		var w: float = weights[p.group()] * (p.attr("abschluss") / 60.0)
 		total += w
 		pool.append([p, w])
 	var roll := _rng.randf() * total
@@ -274,7 +274,7 @@ func _ratings(lineup: Array, mentality: String, factor: float) -> Dictionary:
 	var att_n := 0
 	for pid in lineup:
 		var p: PlayerData = players[pid]
-		match p.pos:
+		match p.group():
 			"TW":
 				gk += _attr_val(pid, "reflexe") * 0.75 + _attr_val(pid, "stellung") * 0.25
 				gk_n += 1
@@ -338,11 +338,11 @@ func _maybe_injury() -> void:
 	_emit("injury", "%s (%s) verletzt sich und kann nicht weiterspielen! (Pause: %d Spieltage)" % [p.full_name(), club.short_name, p.injury_matchdays])
 	lineup.erase(injured_pid)
 	off.append(injured_pid)
-	# Zwangswechsel: bester fitter Ersatz, bevorzugt gleiche Position
+	# Zwangswechsel: bester fitter Ersatz, bevorzugt gleiche Positionsgruppe
 	if (subs_h if is_home else subs_a) < MAX_SUBS:
 		var candidates := bench(is_home)
-		var same_pos := candidates.filter(func(pid): return players[pid].pos == p.pos)
-		var pool: Array = same_pos if not same_pos.is_empty() else candidates
+		var same_group := candidates.filter(func(pid): return players[pid].group() == p.group())
+		var pool: Array = same_group if not same_group.is_empty() else candidates
 		if not pool.is_empty():
 			pool.sort_custom(func(a, b): return _player_effective(a) > _player_effective(b))
 			var pid_in: int = pool[0]
