@@ -22,6 +22,7 @@ var league_id: int = 1
 var budget: int = 5000000
 var sponsor_name: String = ""
 var sponsor_per_md: int = 50000
+var chairman: String = ""      # Vorstandsvorsitzender (fest je Verein, aus clubs.json)
 var formation: String = "4-4-2"
 var lineup: Array = []        # Spieler-IDs der Startelf (wird v. a. für den eigenen Verein gepflegt)
 var player_ids: Array = []
@@ -100,7 +101,7 @@ func to_dict() -> Dictionary:
 		"id": id, "name": name, "short": short_name, "city": city,
 		"stadium": stadium, "cap": capacity, "color": color, "base": base_strength,
 		"league": league_id, "budget": budget, "sponsor": sponsor_name,
-		"sponsor_md": sponsor_per_md, "formation": formation,
+		"sponsor_md": sponsor_per_md, "chairman": chairman, "formation": formation,
 		"lineup": lineup, "players": player_ids,
 	}
 
@@ -118,6 +119,7 @@ static func from_dict(d: Dictionary) -> ClubData:
 	c.budget = int(d.budget)
 	c.sponsor_name = d.sponsor
 	c.sponsor_per_md = int(d.sponsor_md)
+	c.chairman = d.get("chairman", "")
 	c.formation = d.formation
 	for pid in d.lineup:
 		c.lineup.append(int(pid))

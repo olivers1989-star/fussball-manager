@@ -50,6 +50,8 @@ var _years := 2
 # Verhandlungszustand
 var _patience := 100.0
 var _broken_off := false
+var _agreed := false
+var _agreed_terms := {}
 
 var _dialog_label: Label
 var _offer_salary_label: Label
@@ -64,6 +66,10 @@ var _year_buttons: Array = []
 var _present_button: Button
 var _sign_button: Button
 var _agreement_label: Label
+var _agreement_dialog: ConfirmationDialog
+var _signature_overlay: Control
+var _pad: SignaturePad
+var _signature_confirm: Button
 
 func _ready() -> void:
 	_club_id = int(Game.setup.get("club_id", 1))
@@ -71,7 +77,7 @@ func _ready() -> void:
 	_tier = int(_def.league)
 	_offer_salary = Game.board_salary(int(_def.strength))
 	_offer_bonus = int(_offer_salary * 2 / 5000.0) * 5000
-	_chairman = "%s %s" % [Data.first_names.pick_random(), Data.last_names.pick_random()]
+	_chairman = _def.get("chairman", "der Vorstand")
 	_build_ui()
 	_say(OPENING_LINES.pick_random())
 	_refresh()
@@ -236,12 +242,12 @@ func _build_ui() -> void:
 	years_row.add_theme_constant_override("separation", 10)
 	right.add_child(years_row)
 	var group := ButtonGroup.new()
-	for years in [1, 2, 3]:
+	for years in [1, 2, 3, 4, 5]:
 		var b := Button.new()
 		b.toggle_mode = true
 		b.button_group = group
 		b.text = "%d Jahr%s" % [years, "" if years == 1 else "e"]
-		b.custom_minimum_size = Vector2(110, 42)
+		b.custom_minimum_size = Vector2(88, 42)
 		b.set_pressed_no_signal(years == 2)
 		b.pressed.connect(func(): _years = years)
 		years_row.add_child(b)
@@ -274,17 +280,27 @@ func _build_ui() -> void:
 		get_tree().change_scene_to_file(Game.setup.get("origin_scene", "res://scenes/vereinswahl.tscn")))
 	buttons.add_child(leave)
 	_sign_button = Button.new()
-	_sign_button.text = "✍  Vertrag unterschreiben"
+	_sign_button.text = "🤝  Angebot annehmen"
 	_sign_button.custom_minimum_size = Vector2(260, 48)
 	_sign_button.add_theme_font_size_override("font_size", 19)
 	UITheme.make_primary(_sign_button)
-	_sign_button.pressed.connect(_on_sign)
+	_sign_button.pressed.connect(func(): _reach_agreement())
 	buttons.add_child(_sign_button)
+
+	# Einigungs-Popup: friert die Konditionen ein
+	_agreement_dialog = ConfirmationDialog.new()
+	_agreement_dialog.title = "Einigung erzielt"
+	_agreement_dialog.ok_button_text = "Vertrag unterzeichnen"
+	_agreement_dialog.cancel_button_text = "Verhandlungen abbrechen"
+	_agreement_dialog.confirmed.connect(_show_signature)
+	_agreement_dialog.canceled.connect(func():
+		get_tree().change_scene_to_file(Game.setup.get("origin_scene", "res://scenes/vereinswahl.tscn")))
+	add_child(_agreement_dialog)
 
 # ------------------------------------------------------------------ Verhandlungslogik
 
 func _on_present() -> void:
-	if _broken_off:
+	if _broken_off or _agreed:
 		return
 	var demand_salary := int(_salary_slider.value)
 	var demand_bonus := int(_bonus_slider.value)
@@ -293,12 +309,12 @@ func _on_present() -> void:
 	var aggressiveness := salary_excess + bonus_excess * 0.6
 
 	if aggressiveness <= 0.001:
-		# Forderung liegt auf oder unter dem Angebot – der Vorstand freut sich
+		# Forderung liegt auf oder unter dem Angebot – der Vorstand schlägt sofort ein
 		_offer_salary = demand_salary
 		_offer_bonus = demand_bonus
-		_patience = minf(100.0, _patience + 5.0)
 		_say(PLEASED_LINES.pick_random())
 		_refresh()
+		_reach_agreement()
 		return
 
 	_patience -= 10.0 + aggressiveness * 45.0 + randf_range(0.0, 6.0)
@@ -310,9 +326,13 @@ func _on_present() -> void:
 	if Game.setup.get("mode", "") == "vereinsauswahl":
 		chance += 0.10
 	if randf() < clampf(chance, 0.05, 0.95):
+		# Der Vorstand akzeptiert dein Paket – damit ist die Einigung da
 		_offer_salary = demand_salary
 		_offer_bonus = demand_bonus
 		_say(ACCEPT_LINES.pick_random())
+		_refresh()
+		_reach_agreement()
+		return
 	elif randf() < 0.6:
 		# Gegenangebot: der Vorstand kommt dir einen Teil des Weges entgegen
 		_offer_salary = int((_offer_salary + (demand_salary - _offer_salary) * randf_range(0.3, 0.6)) / 1000.0) * 1000
@@ -324,29 +344,193 @@ func _on_present() -> void:
 		_dialog_label.text += "\n" + WARNING_LINES.pick_random()
 	_refresh()
 
-func _break_off() -> void:
-	_broken_off = true
-	_say(BREAKOFF_LINES.pick_random())
+## Einigung: Konditionen einfrieren und das Bestätigungs-Popup zeigen.
+func _reach_agreement() -> void:
+	if _broken_off or _agreed:
+		return
+	_agreed = true
+	_agreed_terms = {"salary": _offer_salary, "bonus": _offer_bonus, "years": _years}
+	_freeze_inputs()
+	_agreement_dialog.dialog_text = "\n".join([
+		"Handschlag mit %s – die Konditionen stehen:" % _chairman,
+		"",
+		"Trainergehalt: %s pro Monat" % Fmt.money(_offer_salary),
+		"Vertragslaufzeit: %d Jahr%s" % [_years, "" if _years == 1 else "e"],
+		"Erfolgsprämie: %s bei „%s“" % [Fmt.money(_offer_bonus), _goal().text],
+		"",
+		"Nach der Einigung sind keine Änderungen mehr möglich.",
+	])
+	_agreement_dialog.popup_centered()
+
+func _freeze_inputs() -> void:
 	_present_button.disabled = true
 	_sign_button.disabled = true
 	_salary_slider.editable = false
 	_bonus_slider.editable = false
 	for b in _year_buttons:
 		b.disabled = true
+
+func _break_off() -> void:
+	_broken_off = true
+	_say(BREAKOFF_LINES.pick_random())
+	_freeze_inputs()
 	# Im Karrieremodus ist dieses Angebot damit vom Tisch
 	if Game.setup.get("mode", "") == "angebote" and Game.setup.has("initial_offers"):
 		Game.setup.initial_offers.erase(_club_id)
 	_refresh()
 
-func _on_sign() -> void:
-	if _broken_off:
-		return
-	Game.setup["coach_salary"] = _offer_salary
-	Game.setup["coach_years"] = _years
-	Game.setup["goal_bonus"] = _offer_bonus
+# ------------------------------------------------------------------ Vertragsunterzeichnung
+
+## Vertragsdokument mit Unterschriftsfeld (Maus) als Overlay.
+func _show_signature() -> void:
+	if _signature_overlay == null:
+		_build_signature_overlay()
+	_pad.clear()
+	_signature_confirm.disabled = true
+	_signature_overlay.visible = true
+
+func _build_signature_overlay() -> void:
+	_signature_overlay = Control.new()
+	_signature_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_signature_overlay)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.65)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_signature_overlay.add_child(dim)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_signature_overlay.add_child(center)
+
+	# Vertragsdokument in Papier-Optik
+	var paper := PanelContainer.new()
+	var paper_style := UITheme.box(Color("#f4efe2"), 6, Color("#c9c1ab"))
+	paper_style.content_margin_left = 40
+	paper_style.content_margin_right = 40
+	paper_style.content_margin_top = 30
+	paper_style.content_margin_bottom = 30
+	paper.add_theme_stylebox_override("panel", paper_style)
+	paper.custom_minimum_size = Vector2(640, 0)
+	center.add_child(paper)
+
+	var doc := VBoxContainer.new()
+	doc.add_theme_constant_override("separation", 10)
+	paper.add_child(doc)
+
+	var doc_title := Label.new()
+	doc_title.text = "ARBEITSVERTRAG"
+	doc_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	doc_title.add_theme_font_size_override("font_size", 30)
+	doc_title.add_theme_color_override("font_color", Color("#1f2937"))
+	doc.add_child(doc_title)
+
+	var doc_text := Label.new()
+	doc_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	doc_text.add_theme_font_size_override("font_size", 16)
+	doc_text.add_theme_color_override("font_color", Color("#374151"))
+	doc_text.text = "\n".join([
+		"Zwischen dem Verein %s, vertreten durch den Vorstandsvorsitzenden %s," % [_def.name, _chairman],
+		"und Trainer %s wird folgender Vertrag geschlossen:" % Game.setup.get("name", "Der Trainer"),
+		"",
+		"§1  Laufzeit: %d Jahr%s ab Vertragsunterzeichnung" % [int(_agreed_terms.get("years", _years)), "" if int(_agreed_terms.get("years", _years)) == 1 else "e"],
+		"§2  Vergütung: %s pro Monat" % Fmt.money(int(_agreed_terms.get("salary", _offer_salary))),
+		"§3  Erfolgsprämie: %s bei Erreichen des Saisonziels „%s“" % [Fmt.money(int(_agreed_terms.get("bonus", _offer_bonus))), _goal().text],
+	])
+	doc.add_child(doc_text)
+
+	var sig_caption := Label.new()
+	sig_caption.text = "Unterschrift (mit der Maus unterschreiben):"
+	sig_caption.add_theme_font_size_override("font_size", 14)
+	sig_caption.add_theme_color_override("font_color", Color("#6b7280"))
+	doc.add_child(sig_caption)
+
+	var pad_panel := PanelContainer.new()
+	pad_panel.add_theme_stylebox_override("panel", UITheme.box(Color.WHITE, 4, Color("#9ca3af")))
+	doc.add_child(pad_panel)
+	_pad = SignaturePad.new()
+	_pad.custom_minimum_size = Vector2(0, 150)
+	_pad.changed.connect(func(): _signature_confirm.disabled = _pad.point_count() < 12)
+	pad_panel.add_child(_pad)
+
+	var sig_line := Label.new()
+	sig_line.text = "%s, %s" % [_def.city, Game.setup.get("name", "Der Trainer")]
+	sig_line.add_theme_font_size_override("font_size", 13)
+	sig_line.add_theme_color_override("font_color", Color("#6b7280"))
+	doc.add_child(sig_line)
+
+	var doc_buttons := HBoxContainer.new()
+	doc_buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	doc_buttons.add_theme_constant_override("separation", 12)
+	doc.add_child(doc_buttons)
+	var clear_button := Button.new()
+	clear_button.text = "Unterschrift löschen"
+	clear_button.pressed.connect(func():
+		_pad.clear()
+		_signature_confirm.disabled = true)
+	doc_buttons.add_child(clear_button)
+	var cancel_button := Button.new()
+	cancel_button.text = "Zurück"
+	cancel_button.pressed.connect(func():
+		_signature_overlay.visible = false
+		_agreement_dialog.popup_centered())
+	doc_buttons.add_child(cancel_button)
+	_signature_confirm = Button.new()
+	_signature_confirm.text = "✍  Unterzeichnen"
+	_signature_confirm.disabled = true
+	UITheme.make_primary(_signature_confirm)
+	_signature_confirm.pressed.connect(_do_sign)
+	doc_buttons.add_child(_signature_confirm)
+
+func _do_sign() -> void:
+	Game.setup["coach_salary"] = int(_agreed_terms.get("salary", _offer_salary))
+	Game.setup["coach_years"] = int(_agreed_terms.get("years", _years))
+	Game.setup["goal_bonus"] = int(_agreed_terms.get("bonus", _offer_bonus))
 	Game.setup["season_goal"] = _goal()
 	Game.new_game(_club_id)
 	get_tree().change_scene_to_file("res://scenes/hub.tscn")
+
+## Unterschriftenfeld: zeichnet Mausstriche als Tinte.
+class SignaturePad:
+	extends Control
+
+	signal changed
+
+	var _strokes: Array = []   # Array von Arrays mit Vector2-Punkten
+	var _drawing := false
+
+	func _init() -> void:
+		clip_contents = true
+		mouse_default_cursor_shape = Control.CURSOR_CROSS
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				_drawing = true
+				_strokes.append([event.position])
+			else:
+				_drawing = false
+			accept_event()
+		elif event is InputEventMouseMotion and _drawing:
+			_strokes.back().append(event.position)
+			queue_redraw()
+			changed.emit()
+			accept_event()
+
+	func _draw() -> void:
+		for stroke in _strokes:
+			if stroke.size() >= 2:
+				draw_polyline(PackedVector2Array(stroke), Color("#1e3a8a"), 3.0, true)
+
+	func clear() -> void:
+		_strokes.clear()
+		queue_redraw()
+
+	func point_count() -> int:
+		var total := 0
+		for stroke in _strokes:
+			total += stroke.size()
+		return total
 
 # ------------------------------------------------------------------ Anzeige
 

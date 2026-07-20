@@ -67,6 +67,7 @@ func generate_world() -> Dictionary:
 			c.budget = (c.base_strength - 44) * 400000
 		c.sponsor_name = sponsor_pool[i % sponsor_pool.size()]
 		c.sponsor_per_md = maxi((c.base_strength - 40) * 4000, 20000)
+		c.chairman = def.get("chairman", "")
 		world.clubs[c.id] = c
 		world.leagues[c.league_id].club_ids.append(c.id)
 		_generate_squad(world, c)
