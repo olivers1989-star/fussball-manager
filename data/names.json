@@ -1,0 +1,30 @@
+{
+  "first_names": [
+    "Lukas", "Finn", "Jonas", "Leon", "Elias", "Noah", "Paul", "Ben", "Luca", "Felix",
+    "Maximilian", "Henry", "Anton", "Emil", "Jakob", "Moritz", "Niklas", "David", "Julian", "Tim",
+    "Tom", "Erik", "Jan", "Fabian", "Simon", "Philipp", "Marlon", "Nico", "Kevin", "Dennis",
+    "Marco", "Sebastian", "Tobias", "Christian", "Daniel", "Florian", "Andreas", "Stefan", "Michael", "Thomas",
+    "Kerem", "Emre", "Deniz", "Mert", "Can", "Luan", "Milan", "Mateo", "Rafael", "Diego",
+    "Andrej", "Nikola", "Luka", "Ivan", "Petar", "Jaromir", "Tomasz", "Piotr", "Kamil", "Jakub",
+    "Yannick", "Pierre", "Antoine", "Hugo", "Louis", "Sven", "Lars", "Bjarne", "Ole", "Matteo",
+    "Alessandro", "Lorenzo", "Enzo", "Joao", "Pedro", "Thiago", "Samuel", "Elias", "Amir", "Karim"
+  ],
+  "last_names": [
+    "Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Wagner", "Becker", "Schulz", "Hoffmann",
+    "Koch", "Bauer", "Richter", "Klein", "Wolf", "Schröder", "Neumann", "Schwarz", "Zimmermann", "Braun",
+    "Krüger", "Hofmann", "Hartmann", "Lange", "Schmitt", "Werner", "Krause", "Meier", "Lehmann", "Schmid",
+    "Schulze", "Maier", "Köhler", "Herrmann", "König", "Walter", "Mayer", "Huber", "Kaiser", "Fuchs",
+    "Peters", "Lang", "Scholz", "Möller", "Weiß", "Jung", "Hahn", "Schubert", "Vogel", "Friedrich",
+    "Keller", "Günther", "Frank", "Berger", "Winkler", "Roth", "Beck", "Lorenz", "Baumann", "Franke",
+    "Albrecht", "Schuster", "Simon", "Ludwig", "Böhm", "Winter", "Kraus", "Martin", "Schumacher", "Krämer",
+    "Yilmaz", "Kaya", "Demir", "Sahin", "Celik", "Öztürk", "Aydin", "Arslan", "Dogan", "Kilic",
+    "Kowalski", "Nowak", "Wisniewski", "Zielinski", "Kaminski", "Silva", "Santos", "Oliveira", "Costa", "Pereira",
+    "Petrovic", "Jovanovic", "Kovac", "Horvat", "Novak", "Rossi", "Ferrari", "Ricci", "Moreau", "Dubois"
+  ],
+  "sponsors": [
+    "NordStrom Energie", "Blitzmarkt", "Kranich Airlines", "AutoWerk AG", "Baltic Bank",
+    "Solaris Technik", "Bergquell Brauerei", "DataHaus IT", "TransCargo Logistik", "Vitalis Versicherung",
+    "GrünKraft Naturstrom", "MediaPlus Verlag", "StahlFlex Industrie", "FrischMarkt", "Quantum Software",
+    "Alpenmilch AG", "SeeHandel GmbH", "TurboTools", "Falken Optik", "ProBau Systeme"
+  ]
+}
