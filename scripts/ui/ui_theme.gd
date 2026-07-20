@@ -181,6 +181,22 @@ static func style_nav(button: Button, active: bool) -> void:
 	button.add_theme_color_override("font_color", Color.WHITE if active else TEXT_DIM)
 	button.add_theme_color_override("font_hover_color", Color.WHITE)
 
+## Sehr kompakte Pille (z. B. S/U/N-Formpunkte, Ergebnisse in Listen).
+static func mini_pill(text: String, bg: Color, fg := Color.WHITE, min_width := 24) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.custom_minimum_size = Vector2(min_width, 24)
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	l.add_theme_font_size_override("font_size", 13)
+	var sb := box(bg, 6)
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	l.add_theme_stylebox_override("normal", sb)
+	l.add_theme_color_override("font_color", fg)
+	return l
+
 ## Kleine gefärbte Info-Pille (z. B. Status, Minute).
 static func pill(text: String, bg: Color, fg := Color.WHITE) -> Label:
 	var l := Label.new()
