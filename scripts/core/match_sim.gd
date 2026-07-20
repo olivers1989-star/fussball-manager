@@ -237,7 +237,8 @@ func _pick_scorer(lineup: Array) -> PlayerData:
 	var pool: Array = []
 	for pid in lineup:
 		var p: PlayerData = players[pid]
-		var w: float = weights[p.pos] * (p.strength / 60.0)
+		# Wer besser abschließt, trifft öfter – der Knipser-Effekt
+		var w: float = weights[p.pos] * (p.attr("abschluss") / 60.0)
 		total += w
 		pool.append([p, w])
 	var roll := _rng.randf() * total
@@ -252,21 +253,51 @@ func _player_effective(pid: int) -> float:
 	var p: PlayerData = players[pid]
 	return p.rating() * dayform[pid] * (0.72 + 0.28 * cond[pid] / 100.0)
 
+## Effektiver Attributwert in dieser Minute (Form, Tagesform und Frische eingerechnet).
+func _attr_val(pid: int, key: String) -> float:
+	var p: PlayerData = players[pid]
+	return p.attr(key) * p.form * dayform[pid] * (0.72 + 0.28 * cond[pid] / 100.0)
+
+## Teamwerte direkt aus den Spielerattributen:
+## Abwehr verteidigt mit Zweikampf/Stellungsspiel/Kopfball, der Torwart hält mit
+## Reflexen, das Mittelfeld lenkt mit Passspiel/Technik, der Sturm trifft mit
+## Abschluss/Tempo. Jeder Spieler zählt mit seinem tatsächlichen Profil.
 func _ratings(lineup: Array, mentality: String, factor: float) -> Dictionary:
-	var sums := {"TW": 0.0, "AB": 0.0, "MF": 0.0, "ST": 0.0}
-	var counts := {"TW": 0, "AB": 0, "MF": 0, "ST": 0}
+	var gk := 0.0
+	var gk_n := 0
+	var defense := 0.0
+	var def_n := 0
+	var mid := 0.0
+	var mf_att := 0.0
+	var mid_n := 0
+	var attack := 0.0
+	var att_n := 0
 	for pid in lineup:
 		var p: PlayerData = players[pid]
-		sums[p.pos] += _player_effective(pid)
-		counts[p.pos] += 1
-	var avg := {}
-	for pos in sums:
-		avg[pos] = (sums[pos] / counts[pos]) if counts[pos] > 0 else 45.0
+		match p.pos:
+			"TW":
+				gk += _attr_val(pid, "reflexe") * 0.75 + _attr_val(pid, "stellung") * 0.25
+				gk_n += 1
+			"AB":
+				defense += _attr_val(pid, "zweikampf") * 0.45 + _attr_val(pid, "stellung") * 0.3 + _attr_val(pid, "kopfball") * 0.25
+				def_n += 1
+			"MF":
+				mid += _attr_val(pid, "passen") * 0.4 + _attr_val(pid, "technik") * 0.3 + _attr_val(pid, "zweikampf") * 0.3
+				mf_att += _attr_val(pid, "passen") * 0.5 + _attr_val(pid, "technik") * 0.5
+				mid_n += 1
+			"ST":
+				attack += _attr_val(pid, "abschluss") * 0.45 + _attr_val(pid, "tempo") * 0.3 + _attr_val(pid, "technik") * 0.25
+				att_n += 1
+	var gk_avg := (gk / gk_n) if gk_n > 0 else 40.0
+	var def_avg := (defense / def_n) if def_n > 0 else 45.0
+	var mid_avg := (mid / mid_n) if mid_n > 0 else 45.0
+	var mf_att_avg := (mf_att / mid_n) if mid_n > 0 else 45.0
+	var att_avg := (attack / att_n) if att_n > 0 else mf_att_avg
 	var m: Dictionary = MENTALITIES[mentality]
 	return {
-		"att": (0.7 * avg.ST + 0.3 * avg.MF) * m.att * factor,
-		"mid": avg.MF * m.mid * factor,
-		"def": (0.55 * avg.AB + 0.25 * avg.TW + 0.2 * avg.MF) * m.def * factor,
+		"att": (0.7 * att_avg + 0.3 * mf_att_avg) * m.att * factor,
+		"mid": mid_avg * m.mid * factor,
+		"def": (0.55 * def_avg + 0.25 * gk_avg + 0.2 * mid_avg) * m.def * factor,
 	}
 
 ## Spieler auf dem Feld verlieren Frische – abhängig von Ausdauer und Spielweise.

@@ -8,6 +8,7 @@ var _pos_filter: OptionButton
 var _market_tree: Tree
 var _squad_tree: Tree
 var _message: Label
+var _profile: PlayerProfileDialog
 
 func _init() -> void:
 	super()
@@ -67,6 +68,16 @@ func _init() -> void:
 	sell.text = "Ausgewählten Spieler verkaufen"
 	sell.pressed.connect(_on_sell)
 	right.add_child(sell)
+
+	_profile = PlayerProfileDialog.new()
+	add_child(_profile)
+	for tree in [_market_tree, _squad_tree]:
+		tree.allow_rmb_select = true
+		tree.item_mouse_selected.connect(func(_pos: Vector2, button: int):
+			if button == MOUSE_BUTTON_RIGHT:
+				var item: TreeItem = tree.get_selected()
+				if item != null and item.get_metadata(0) != null:
+					_profile.open_for(int(item.get_metadata(0))))
 
 func refresh() -> void:
 	var wanted_pos := _pos_filter.get_item_text(_pos_filter.selected)

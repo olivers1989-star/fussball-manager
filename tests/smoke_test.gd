@@ -15,6 +15,17 @@ func _ready() -> void:
 	assert(Game.manager_age() == 2026 - 1980)
 	assert(Game.skill("taktik") == 3)
 	Game.training_focus = "Leistung"
+
+	# Attribute: vollständig vorhanden, Stärke aus Attributen abgeleitet
+	for pid in Game.world.players:
+		var pl0: PlayerData = Game.world.players[pid]
+		assert(pl0.attributes.size() == PlayerData.ATTRIBUTES.size())
+		assert(pl0.strength >= 25 and pl0.strength <= 96)
+	var tw_sample: PlayerData = Game.my_club().players_by_pos(Game.world.players, "TW")[0]
+	var st_sample: PlayerData = Game.my_club().players_by_pos(Game.world.players, "ST")[0]
+	assert(tw_sample.attr("reflexe") > tw_sample.attr("abschluss"))
+	assert(st_sample.attr("abschluss") > st_sample.attr("reflexe"))
+	print("Attribut-Check OK (TW-Reflexe %d, ST-Abschluss %d)" % [tw_sample.attr("reflexe"), st_sample.attr("abschluss")])
 	var world: Dictionary = Game.world
 	print("Spieler: %d, Vereine: %d, Ligen: %d" % [world.players.size(), world.clubs.size(), world.leagues.size()])
 	assert(world.clubs.size() == 36)
@@ -39,8 +50,10 @@ func _ready() -> void:
 		for entry in result.others:
 			total_goals += int(entry.fixture.hg) + int(entry.fixture.ag)
 			total_matches += 1
-	print("34 Spieltage simuliert: %d Spiele, %.2f Tore/Spiel" % [total_matches, float(total_goals) / total_matches])
+	var goals_per_match := float(total_goals) / total_matches
+	print("34 Spieltage simuliert: %d Spiele, %.2f Tore/Spiel" % [total_matches, goals_per_match])
 	assert(total_matches == 34 * 18)
+	assert(goals_per_match > 1.8 and goals_per_match < 4.2)
 	assert(Game.season_over())
 
 	# Kondition, Verletzungen, Sperren und Noten müssen im Saisonverlauf entstanden sein

@@ -351,8 +351,8 @@ func _daily_recovery() -> void:
 				"Leistung":
 					regen -= 1.2
 					p.form = clampf(p.form + 0.0011, 0.8, 1.2)
-					if p.age <= 26 and p.strength < 94 and randf() < 0.0036:
-						p.strength += 1
+					if p.age <= 26 and randf() < 0.0036:
+						p.develop(1, 1)
 		p.condition = minf(100.0, p.condition + regen)
 
 func next_fixture(cid: int) -> Dictionary:
@@ -569,11 +569,11 @@ func end_season() -> Dictionary:
 			# Automatische Verlängerung (KI wie Spieler) – Vertragsverhandlungen kommen in einer späteren Ausbaustufe
 			p.contract_years = randi_range(2, 3)
 			p.salary = maxi(int(p.market_value() / 40.0 / 1000.0) * 1000, 3000)
-		# Entwicklung: Junge werden besser, Alte bauen ab
+		# Entwicklung: Junge verbessern Attribute, Alte bauen ab
 		if p.age <= 23:
-			p.strength = clampi(p.strength + randi_range(0, 3), 28, 96)
+			p.develop(randi_range(1, 2), randi_range(1, 3))
 		elif p.age >= 31:
-			p.strength = clampi(p.strength - randi_range(0, 3), 28, 96)
+			p.develop(-randi_range(1, 2), randi_range(1, 3))
 
 	for pid in retiring:
 		var p: PlayerData = world.players[pid]

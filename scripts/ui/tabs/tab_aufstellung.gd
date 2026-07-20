@@ -8,6 +8,7 @@ var _bench_list: ItemList
 var _message: Label
 var _starter_ids: Array = []
 var _bench_ids: Array = []
+var _profile: PlayerProfileDialog
 
 func _init() -> void:
 	super()
@@ -64,6 +65,14 @@ func _init() -> void:
 	bottom.add_child(swap)
 	_message = info_label()
 	bottom.add_child(_message)
+
+	_profile = PlayerProfileDialog.new()
+	add_child(_profile)
+	for list in [_starters_list, _bench_list]:
+		list.allow_rmb_select = true
+		list.item_clicked.connect(func(index: int, _pos: Vector2, button: int):
+			if button == MOUSE_BUTTON_RIGHT:
+				_profile.open_for(int(list.get_item_metadata(index))))
 
 func refresh() -> void:
 	var c := Game.my_club()
