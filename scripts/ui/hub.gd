@@ -433,14 +433,11 @@ func _on_sim_pause_toggle() -> void:
 
 func _finish_sim() -> void:
 	_sim_timer.stop()
-	_update_sim_display()
+	_sim_overlay.visible = false
 	update_topbar()
 	if Game.is_matchday_today():
-		_sim_date_label.text = "SPIELTAG!  %s" % Game.date_label()
-		_sim_pause_button.visible = false
-		_sim_match_button.visible = true
-	else:
-		_close_sim()
+		_toast.text = "Spieltag erreicht – Anpfiff, wenn du bereit bist!"
+	show_screen("Übersicht")
 
 func _close_sim() -> void:
 	_sim_timer.stop()
