@@ -29,6 +29,8 @@ func generate_world() -> Dictionary:
 	var world := {
 		"season_year": 2026,
 		"matchday": 0,
+		"date": ScheduleGen.season_start(2026),
+		"matchday_dates": ScheduleGen.matchday_dates(2026),
 		"next_player_id": 1,
 		"players": {},   # id -> PlayerData
 		"clubs": {},     # id -> ClubData

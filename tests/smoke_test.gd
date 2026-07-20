@@ -20,6 +20,13 @@ func _ready() -> void:
 	assert(world.clubs.size() == 36)
 	assert(Game.league(1).fixtures.size() == 306)
 
+	# Kalender: Saison startet am 1. August, Spieltage samstags
+	assert(Game.date_dict().month == 8 and Game.date_dict().day == 1)
+	assert(Game.world.matchday_dates.size() == 34)
+	assert(Time.get_datetime_dict_from_unix_time(Game.matchday_date(0)).weekday == Time.WEEKDAY_SATURDAY)
+	Game.advance_day()
+	assert(Game.date_dict().day == 2)
+
 	var total_goals := 0
 	var total_matches := 0
 	for md in 34:

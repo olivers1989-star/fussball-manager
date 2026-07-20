@@ -19,7 +19,7 @@ func _ready() -> void:
 	var hub: Control = load("res://scenes/hub.tscn").instantiate()
 	add_child(hub)
 	await get_tree().process_frame
-	assert(hub._screens.size() == 8)
+	assert(hub._screens.size() == 10)
 	for title in hub.SCREEN_ORDER:
 		hub.show_screen(title)
 		await get_tree().process_frame

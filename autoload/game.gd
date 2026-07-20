@@ -167,6 +167,63 @@ func season_label() -> String:
 func season_over() -> bool:
 	return matchday() >= ROUNDS_PER_SEASON
 
+# ------------------------------------------------------------------ Kalender & Tagesablauf
+
+const DAY := 86400
+const WEEKDAYS := ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"]
+
+func date_unix() -> int:
+	return int(world.date)
+
+func date_dict() -> Dictionary:
+	return Time.get_datetime_dict_from_unix_time(date_unix())
+
+func date_label() -> String:
+	var d := date_dict()
+	return "%s, %02d.%02d.%d" % [WEEKDAYS[d.weekday], d.day, d.month, d.year]
+
+func matchday_date(md: int) -> int:
+	var dates: Array = world.matchday_dates
+	return int(dates[mini(md, dates.size() - 1)])
+
+func is_matchday_today() -> bool:
+	return not season_over() and date_unix() >= matchday_date(matchday())
+
+## Einen Tag weiterschalten (nicht über den anstehenden Spieltag hinaus).
+func advance_day() -> void:
+	if season_over() or is_matchday_today():
+		return
+	world.date = date_unix() + DAY
+	_daily_recovery()
+
+## Tage bis zum nächsten Spieltag durchlaufen lassen.
+func advance_to_matchday() -> void:
+	while not season_over() and not is_matchday_today():
+		world.date = date_unix() + DAY
+		_daily_recovery()
+
+## Tägliche Erholung und Trainingseffekte. Die Fähigkeit "Training" und der
+## Wochenschwerpunkt wirken auf den eigenen Verein.
+func _daily_recovery() -> void:
+	for pid in world.players:
+		var p: PlayerData = world.players[pid]
+		var regen := 5.0
+		if p.club_id == my_club_id:
+			regen += 0.21 * skill("training")
+			match training_focus:
+				"Kondition":
+					regen += 1.2
+					if p.stamina < 95 and randf() < 0.003:
+						p.stamina += 1
+				"Regeneration":
+					regen += 2.3
+				"Leistung":
+					regen -= 1.2
+					p.form = clampf(p.form + 0.0011, 0.8, 1.2)
+					if p.age <= 26 and p.strength < 94 and randf() < 0.0036:
+						p.strength += 1
+		p.condition = minf(100.0, p.condition + regen)
+
 func next_fixture(cid: int) -> Dictionary:
 	if season_over():
 		return {}
@@ -213,40 +270,25 @@ func finish_matchday(md: Dictionary) -> void:
 		sim.fixture.ag = sim.ag
 	if md.mine != null:
 		_apply_skill_form_effects({"fixture": md.mine.fixture})
-	_regenerate_players()
+	_heal_and_suspend_tick()
 	_apply_matchday_finances()
 	world.matchday = matchday() + 1
 
-## Zwischen den Spieltagen: Verletzungen heilen, Sperren laufen ab, Frische regeneriert.
-## Wer durchspielt, erholt sich nicht vollständig – Rotation wird wichtig.
-## Die Fähigkeit "Training" und der Trainingsschwerpunkt wirken auf den eigenen Verein.
-func _regenerate_players() -> void:
+## Nach jedem Spieltag: Verletzungen heilen und Sperren laufen ab (in Spieltagen gezählt).
+## Die Frische regeneriert dagegen täglich über advance_day()/_daily_recovery().
+func _heal_and_suspend_tick() -> void:
 	for pid in world.players:
 		var p: PlayerData = world.players[pid]
 		if p.injury_matchdays > 0:
 			p.injury_matchdays -= 1
 		if p.suspended_matchdays > 0:
 			p.suspended_matchdays -= 1
-		var regen := 35.0
-		if p.club_id == my_club_id:
-			regen += 1.5 * skill("training")
-			match training_focus:
-				"Kondition":
-					regen += 8.0
-					if p.stamina < 95 and randf() < 0.02:
-						p.stamina += 1
-				"Regeneration":
-					regen += 16.0
-				"Leistung":
-					regen -= 8.0
-					p.form = clampf(p.form + 0.008, 0.8, 1.2)
-					if p.age <= 26 and p.strength < 94 and randf() < 0.025:
-						p.strength += 1
-		p.condition = minf(100.0, p.condition + regen)
 
 ## Komplettsimulation ohne Eingriffe (Tests, Schnellrechnung).
+## Springt vorher per Tagessimulation zum Spieltagstermin.
 ## Rückgabe kompatibel: {mine: {fixture, res}, others: [{league, fixture}]}
 func play_matchday() -> Dictionary:
+	advance_to_matchday()
 	var md := start_matchday()
 	if md.mine != null:
 		md.mine.run_full()
@@ -422,6 +464,8 @@ func end_season() -> Dictionary:
 	l2.fixtures = ScheduleGen.build_fixtures(l2.club_ids)
 	world.matchday = 0
 	world.season_year = int(world.season_year) + 1
+	world.date = ScheduleGen.season_start(int(world.season_year))
+	world.matchday_dates = ScheduleGen.matchday_dates(int(world.season_year))
 	return summary
 
 # ------------------------------------------------------------------ Jobangebote (Echte Karriere)
@@ -598,6 +642,8 @@ func _world_to_dict() -> Dictionary:
 	return {
 		"season_year": world.season_year,
 		"matchday": world.matchday,
+		"date": world.date,
+		"matchday_dates": world.matchday_dates,
 		"next_player_id": world.next_player_id,
 		"players": players,
 		"clubs": clubs,
@@ -608,11 +654,20 @@ func _world_from_dict(d: Dictionary) -> Dictionary:
 	var w := {
 		"season_year": int(d.season_year),
 		"matchday": int(d.matchday),
+		"date": int(d.get("date", 0)),
+		"matchday_dates": [],
 		"next_player_id": int(d.next_player_id),
 		"players": {},
 		"clubs": {},
 		"leagues": {},
 	}
+	for t in d.get("matchday_dates", []):
+		w.matchday_dates.append(int(t))
+	if w.matchday_dates.is_empty():
+		w.matchday_dates = ScheduleGen.matchday_dates(w.season_year)
+	if w.date == 0:
+		# Alte Spielstände ohne Kalender: Datum auf den anstehenden Spieltag setzen
+		w.date = int(w.matchday_dates[mini(w.matchday, w.matchday_dates.size() - 1)])
 	for key in d.players:
 		w.players[int(key)] = PlayerData.from_dict(d.players[key])
 	for key in d.clubs:

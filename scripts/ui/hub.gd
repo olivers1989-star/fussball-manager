@@ -1,7 +1,7 @@
 extends Control
 ## Manager-Zentrale: Sidebar-Navigation, Kopfleiste mit Vereinsinfos und Inhaltsbereich.
 
-const SCREEN_ORDER := ["Übersicht", "Tabelle", "Spielplan", "Kader", "Aufstellung", "Training", "Transfermarkt", "Finanzen"]
+const SCREEN_ORDER := ["Übersicht", "Trainer", "Kalender", "Tabelle", "Spielplan", "Kader", "Aufstellung", "Training", "Transfermarkt", "Finanzen"]
 
 var _screens := {}        # Titel -> TabBase
 var _nav_buttons := {}    # Titel -> Button
@@ -13,6 +13,8 @@ var _club_name_label: Label
 var _club_league_label: Label
 var _season_label: Label
 var _position_label: Label
+var _day_button: Button
+var _play_button: Button
 var _budget_label: Label
 var _next_match_label: Label
 var _toast: Label
@@ -138,13 +140,18 @@ func _build_ui() -> void:
 	top_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(top_spacer)
 
-	var play_button := Button.new()
-	play_button.text = "▶  Spieltag anpfeifen"
-	play_button.add_theme_font_size_override("font_size", 19)
-	play_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	UITheme.make_primary(play_button)
-	play_button.pressed.connect(_on_play_matchday)
-	top.add_child(play_button)
+	_day_button = Button.new()
+	_day_button.text = "+1 Tag"
+	_day_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_day_button.pressed.connect(_on_next_day)
+	top.add_child(_day_button)
+
+	_play_button = Button.new()
+	_play_button.add_theme_font_size_override("font_size", 19)
+	_play_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	UITheme.make_primary(_play_button)
+	_play_button.pressed.connect(_on_play_pressed)
+	top.add_child(_play_button)
 
 	var content_margin := MarginContainer.new()
 	content_margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -154,6 +161,8 @@ func _build_ui() -> void:
 
 	_screens = {
 		"Übersicht": TabUebersicht.new(),
+		"Trainer": TabTrainer.new(),
+		"Kalender": TabKalender.new(),
 		"Tabelle": TabTabelle.new(),
 		"Spielplan": TabSpielplan.new(),
 		"Kader": TabKader.new(),
@@ -251,8 +260,9 @@ func update_topbar() -> void:
 	_club_name_label.text = c.name
 	_club_league_label.text = "%s · %s" % [Game.my_league().name, Game.manager_name]
 
-	_season_label.text = "%s · Spieltag %d/34" % [Game.season_label(), mini(Game.matchday() + 1, 34)]
-	_position_label.text = "Tabellenplatz %d · %s" % [Game.my_league().position_of(Game.my_club_id), Game.my_league().name]
+	_season_label.text = "%s · %s" % [Game.date_label(), Game.season_label()]
+	_position_label.text = "Spieltag %d/34 · Platz %d · %s" % [
+		mini(Game.matchday() + 1, 34), Game.my_league().position_of(Game.my_club_id), Game.my_league().name]
 	_budget_label.text = Fmt.money(c.budget)
 
 	var f := Game.next_fixture(Game.my_club_id)
@@ -261,7 +271,19 @@ func update_topbar() -> void:
 	else:
 		var home := int(f.home) == c.id
 		var opponent := Game.club(int(f.away) if home else int(f.home))
-		_next_match_label.text = "%s %s" % ["vs" if home else "bei", opponent.name]
+		var d := Time.get_datetime_dict_from_unix_time(Game.matchday_date(Game.matchday()))
+		_next_match_label.text = "%s %s (%02d.%02d.)" % ["vs" if home else "bei", opponent.name, int(d.day), int(d.month)]
+
+	# Aktions-Buttons je nach Kalenderlage
+	if Game.season_over():
+		_play_button.text = "🏁  Saison abschließen"
+		_day_button.visible = false
+	elif Game.is_matchday_today():
+		_play_button.text = "▶  Spieltag anpfeifen"
+		_day_button.visible = false
+	else:
+		_play_button.text = "⏩  Zum Spieltag"
+		_day_button.visible = true
 
 # ------------------------------------------------------------------ Aktionen
 
@@ -272,11 +294,21 @@ func _on_save() -> void:
 		if is_instance_valid(_toast):
 			_toast.text = "")
 
-func _on_play_matchday() -> void:
+func _on_next_day() -> void:
+	Game.advance_day()
+	update_topbar()
+	_refresh_active_screen()
+
+func _on_play_pressed() -> void:
 	if Game.season_over():
 		_show_season_end()
 		return
-	get_tree().change_scene_to_file("res://scenes/match.tscn")
+	if Game.is_matchday_today():
+		get_tree().change_scene_to_file("res://scenes/match.tscn")
+		return
+	Game.advance_to_matchday()
+	update_topbar()
+	_refresh_active_screen()
 
 func _on_season_dialog_confirmed() -> void:
 	update_topbar()

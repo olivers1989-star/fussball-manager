@@ -36,3 +36,19 @@ static func build_fixtures(club_ids: Array) -> Array:
 
 static func _fixture(p_round: int, p_home: int, p_away: int) -> Dictionary:
 	return {"round": p_round, "home": p_home, "away": p_away, "played": false, "hg": 0, "ag": 0}
+
+## Saisonbeginn: 1. August des Jahres (12:00, vermeidet Zeitzonen-Randfälle).
+static func season_start(year: int) -> int:
+	return int(Time.get_unix_time_from_datetime_dict({
+		"year": year, "month": 8, "day": 1, "hour": 12, "minute": 0, "second": 0}))
+
+## Alle 34 Spieltagstermine einer Saison: wöchentlich samstags.
+## Der erste Spieltag liegt mindestens eine Vorbereitungswoche nach Saisonstart.
+static func matchday_dates(year: int) -> Array:
+	var t := season_start(year) + 6 * 86400
+	while Time.get_datetime_dict_from_unix_time(t).weekday != Time.WEEKDAY_SATURDAY:
+		t += 86400
+	var dates: Array = []
+	for i in 34:
+		dates.append(t + i * 7 * 86400)
+	return dates
