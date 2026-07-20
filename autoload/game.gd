@@ -191,22 +191,29 @@ func matchday_date(md: int) -> int:
 func is_matchday_today() -> bool:
 	return not season_over() and date_unix() >= matchday_date(matchday())
 
+func days_until_matchday() -> int:
+	if season_over():
+		return 0
+	return maxi(0, int((matchday_date(matchday()) - date_unix()) / DAY))
+
 ## Einen Tag weiterschalten (nicht über den anstehenden Spieltag hinaus).
-## Rückgabe: die Ereignisse dieses Tages.
-func advance_day() -> Array:
+## Rückgabe: {news: [Meldungen], decision: {} oder Entscheidungs-Ereignis}
+func advance_day() -> Dictionary:
 	if season_over() or is_matchday_today():
-		return []
+		return {"news": [], "decision": {}}
 	world.date = date_unix() + DAY
 	_daily_recovery()
 	return _daily_events()
 
-## Tage bis zum nächsten Spieltag durchlaufen lassen. Rückgabe: alle Ereignisse.
+## Tage bis zum Spieltag durchlaufen (Tests/Schnellsimulation).
+## Entscheidungen werden dabei automatisch abgelehnt.
 func advance_to_matchday() -> Array:
 	var collected: Array = []
 	while not season_over() and not is_matchday_today():
-		world.date = date_unix() + DAY
-		_daily_recovery()
-		collected.append_array(_daily_events())
+		var r := advance_day()
+		collected.append_array(r.news)
+		if not r.decision.is_empty():
+			collected.append(resolve_decision(r.decision, 1))
 	return collected
 
 func _add_news(kind: String, text: String) -> Dictionary:
@@ -216,8 +223,9 @@ func _add_news(kind: String, text: String) -> Dictionary:
 		news.resize(60)
 	return entry
 
-## Was passiert heute rund um deinen Verein? (Training, Sponsor, Presse ...)
-func _daily_events() -> Array:
+## Was passiert heute rund um deinen Verein? Meldungen haben Effekte,
+## Entscheidungs-Ereignisse pausieren die Simulation und verlangen eine Wahl.
+func _daily_events() -> Dictionary:
 	var events: Array = []
 	var c := my_club()
 	var squad := c.players(world.players)
@@ -239,33 +247,91 @@ func _daily_events() -> Array:
 		events.append(_add_news("training", "%s überzeugt im Training – seine Form steigt." % p.full_name()))
 
 	# Sponsor-Sonderzahlung
-	if randf() < 0.025:
+	if randf() < 0.02:
 		var bonus := randi_range(2, 8) * 10000
 		c.budget += bonus
 		log_transaction("Sonderzahlung Sponsor", bonus)
 		events.append(_add_news("sponsor", "Sponsor %s überweist eine Sonderzahlung von %s." % [c.sponsor_name, Fmt.money(bonus)]))
 
-	# Transfergerücht um einen deiner Spieler
-	if randf() < 0.04 and not squad.is_empty():
+	# --- Entscheidungs-Ereignisse (max. eines pro Tag)
+	var decision := {}
+
+	# Transferangebot für einen deiner Spieler
+	if randf() < 0.03 and squad.size() > 16:
 		var p: PlayerData = squad.pick_random()
-		var other_ids: Array = world.clubs.keys().filter(func(cid): return cid != my_club_id)
-		var other: ClubData = world.clubs[other_ids.pick_random()]
-		events.append(_add_news("gerücht", "Medienbericht: %s soll Interesse an %s zeigen." % [other.name, p.full_name()]))
+		var other_ids: Array = world.clubs.keys().filter(func(cid): return cid != my_club_id and world.clubs[cid].player_ids.size() < 29)
+		if not other_ids.is_empty():
+			var other: ClubData = world.clubs[other_ids.pick_random()]
+			var price := maxi(int(p.market_value() * randf_range(0.9, 1.35) / 10000.0) * 10000, 50000)
+			decision = {
+				"kind": "transfer_offer", "pid": p.id, "club_id": other.id, "price": price,
+				"title": "Transferangebot für %s" % p.full_name(),
+				"text": "%s bietet %s für %s (%s, Stärke %d, Vertrag noch %d J.).\nMarktwert: %s. Verkaufen?" % [
+					other.name, Fmt.money(price), p.full_name(), p.pos, p.strength, p.contract_years, Fmt.money(p.market_value())],
+				"options": ["Verkaufen", "Ablehnen"],
+			}
 
-	# Vereinsleben & Presse
-	if randf() < 0.09:
-		var flavor := [
-			"Die Fans diskutieren hitzig über die Aufstellung fürs nächste Spiel.",
-			"%s betont in der Presse das Saisonziel: „%s“." % [c.chairman, season_goal.get("text", "?")],
-			"Die Lokalpresse lobt die Arbeit des Trainerteams.",
-			"Beim heutigen Training schauten Scouts anderer Vereine zu.",
-			"Der Zeugwart meldet Vollzug: Alle Trikots sind frisch gewaschen.",
-			"Ein Fanclub überreicht der Mannschaft selbstgebackenen Kuchen.",
-			"Der Platzwart kämpft mit dem Rasen – Training auf dem Nebenplatz.",
-		]
-		events.append(_add_news("presse", flavor.pick_random()))
+	# Freundschaftsspiel-Anfrage (nur wenn genug Abstand zum Spieltag)
+	if decision.is_empty() and randf() < 0.03 and days_until_matchday() >= 3:
+		var fee := int(c.capacity * randf_range(4.0, 6.0) / 10000.0) * 10000
+		decision = {
+			"kind": "friendly", "fee": fee,
+			"title": "Freundschaftsspiel-Anfrage",
+			"text": "Ein Verein aus der Region fragt für morgen ein Freundschaftsspiel an.\nEinnahmen: ca. %s – aber deine Spieler verlieren spürbar Frische." % Fmt.money(fee),
+			"options": ["Zusagen (+%s)" % Fmt.money(fee), "Absagen"],
+		}
 
-	return events
+	# Unzufriedener Ergänzungsspieler sucht das Gespräch
+	if decision.is_empty() and randf() < 0.03:
+		var bench := squad.filter(func(p): return not c.lineup.has(p.id))
+		if not bench.is_empty():
+			var p: PlayerData = bench.pick_random()
+			decision = {
+				"kind": "player_talk", "pid": p.id,
+				"title": "Spielergespräch",
+				"text": "%s (%s, Stärke %d) ist unzufrieden mit seiner Einsatzzeit und bittet um ein Gespräch." % [
+					p.full_name(), p.pos, p.strength],
+				"options": ["Gespräch suchen", "Abblocken"],
+			}
+
+	return {"news": events, "decision": decision}
+
+## Wendet die Wahl eines Entscheidungs-Ereignisses an. Rückgabe: die Ergebnis-Meldung.
+func resolve_decision(decision: Dictionary, choice: int) -> Dictionary:
+	match decision.get("kind", ""):
+		"transfer_offer":
+			var p := get_player(int(decision.pid))
+			if choice == 0 and my_club().player_ids.size() > 16 and p.club_id == my_club_id:
+				var buyer: ClubData = world.clubs[int(decision.club_id)]
+				my_club().player_ids.erase(p.id)
+				my_club().lineup.erase(p.id)
+				my_club().budget += int(decision.price)
+				buyer.player_ids.append(p.id)
+				p.club_id = buyer.id
+				p.contract_years = 3
+				log_transaction("Verkauf: %s an %s" % [p.full_name(), buyer.name], int(decision.price))
+				return _add_news("transfer", "%s wechselt für %s zu %s." % [p.full_name(), Fmt.money(int(decision.price)), buyer.name])
+			return _add_news("transfer", "Angebot abgelehnt: %s bleibt im Verein." % p.full_name())
+		"friendly":
+			if choice == 0:
+				var fee := int(decision.fee)
+				my_club().budget += fee
+				log_transaction("Freundschaftsspiel", fee)
+				for p in my_club().players(world.players):
+					p.condition = maxf(0.0, p.condition - 8.0)
+				return _add_news("sponsor", "Freundschaftsspiel absolviert: %s eingenommen, die Beine sind etwas schwerer." % Fmt.money(fee))
+			return _add_news("presse", "Freundschaftsspiel-Anfrage abgesagt – volle Konzentration aufs Training.")
+		"player_talk":
+			var p := get_player(int(decision.pid))
+			if choice == 0:
+				if randf() < 0.40 + 0.06 * skill("motivation"):
+					p.form = clampf(p.form + 0.05, 0.8, 1.2)
+					return _add_news("training", "Dein Gespräch mit %s fruchtet – er brennt auf seine Chance." % p.full_name())
+				p.form = clampf(p.form - 0.02, 0.8, 1.2)
+				return _add_news("training", "Das Gespräch mit %s verlief frostig – er bleibt unzufrieden." % p.full_name())
+			p.form = clampf(p.form - 0.03, 0.8, 1.2)
+			return _add_news("training", "%s fühlt sich übergangen – seine Form leidet." % p.full_name())
+	return {}
 
 ## Tägliche Erholung und Trainingseffekte. Die Fähigkeit "Training" und der
 ## Wochenschwerpunkt wirken auf den eigenen Verein.

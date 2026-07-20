@@ -13,7 +13,6 @@ var _club_name_label: Label
 var _club_league_label: Label
 var _season_label: Label
 var _position_label: Label
-var _day_button: Button
 var _play_button: Button
 var _budget_label: Label
 var _next_match_label: Label
@@ -23,8 +22,17 @@ var _season_dialog: AcceptDialog
 var _offers_dialog: ConfirmationDialog
 var _offers_list: ItemList
 var _pending_offers: Array = []
-var _report_dialog: AcceptDialog
-var _report_list: ItemList
+# Sichtbare Wochensimulation
+var _sim_overlay: Control
+var _sim_date_label: Label
+var _sim_strip: HBoxContainer
+var _sim_feed: ItemList
+var _sim_timer: Timer
+var _sim_pause_button: Button
+var _sim_close_button: Button
+var _sim_match_button: Button
+var _decision_dialog: ConfirmationDialog
+var _pending_decision := {}
 
 func _ready() -> void:
 	if not Game.initialized:
@@ -142,12 +150,6 @@ func _build_ui() -> void:
 	top_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(top_spacer)
 
-	_day_button = Button.new()
-	_day_button.text = "+1 Tag"
-	_day_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_day_button.pressed.connect(_on_next_day)
-	top.add_child(_day_button)
-
 	_play_button = Button.new()
 	_play_button.add_theme_font_size_override("font_size", 19)
 	_play_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -207,14 +209,13 @@ func _build_ui() -> void:
 	_offers_dialog.confirmed.connect(_on_offer_accepted)
 	add_child(_offers_dialog)
 
-	_report_dialog = AcceptDialog.new()
-	_report_dialog.title = "Tagesbericht"
-	_report_dialog.ok_button_text = "Alles klar"
-	_report_dialog.min_size = Vector2i(760, 340)
-	_report_list = ItemList.new()
-	_report_list.custom_minimum_size = Vector2(720, 260)
-	_report_dialog.add_child(_report_list)
-	add_child(_report_dialog)
+	_decision_dialog = ConfirmationDialog.new()
+	_decision_dialog.min_size = Vector2i(560, 220)
+	_decision_dialog.confirmed.connect(func(): _on_decision(0))
+	_decision_dialog.canceled.connect(func(): _on_decision(1))
+	add_child(_decision_dialog)
+
+	_build_sim_overlay()
 
 func _stat_box(caption: String, kind: String) -> VBoxContainer:
 	var v := VBoxContainer.new()
@@ -285,16 +286,13 @@ func update_topbar() -> void:
 		var d := Time.get_datetime_dict_from_unix_time(Game.matchday_date(Game.matchday()))
 		_next_match_label.text = "%s %s (%02d.%02d.)" % ["vs" if home else "bei", opponent.name, int(d.day), int(d.month)]
 
-	# Aktions-Buttons je nach Kalenderlage
+	# Aktions-Button je nach Kalenderlage
 	if Game.season_over():
 		_play_button.text = "🏁  Saison abschließen"
-		_day_button.visible = false
 	elif Game.is_matchday_today():
 		_play_button.text = "▶  Spieltag anpfeifen"
-		_day_button.visible = false
 	else:
-		_play_button.text = "⏩  Zum Spieltag"
-		_day_button.visible = true
+		_play_button.text = "Weiter  ⏩"
 
 # ------------------------------------------------------------------ Aktionen
 
@@ -305,12 +303,6 @@ func _on_save() -> void:
 		if is_instance_valid(_toast):
 			_toast.text = "")
 
-func _on_next_day() -> void:
-	var events := Game.advance_day()
-	update_topbar()
-	_refresh_active_screen()
-	_show_day_report(events, "Tagesbericht – %s" % Game.date_label())
-
 func _on_play_pressed() -> void:
 	if Game.season_over():
 		_show_season_end()
@@ -318,20 +310,175 @@ func _on_play_pressed() -> void:
 	if Game.is_matchday_today():
 		get_tree().change_scene_to_file("res://scenes/match.tscn")
 		return
-	var events := Game.advance_to_matchday()
+	_start_week_sim()
+
+# ------------------------------------------------------------------ Sichtbare Wochensimulation
+
+func _build_sim_overlay() -> void:
+	_sim_overlay = Control.new()
+	_sim_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_sim_overlay.visible = false
+	add_child(_sim_overlay)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.7)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_sim_overlay.add_child(dim)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_sim_overlay.add_child(center)
+	var card := UITheme.card()
+	card.custom_minimum_size = Vector2(860, 540)
+	center.add_child(card)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	card.add_child(box)
+
+	var title := Label.new()
+	title.text = "Die Tage vergehen …"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	box.add_child(title)
+
+	_sim_date_label = Label.new()
+	_sim_date_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sim_date_label.add_theme_font_size_override("font_size", 34)
+	_sim_date_label.add_theme_color_override("font_color", UITheme.ACCENT)
+	box.add_child(_sim_date_label)
+
+	_sim_strip = HBoxContainer.new()
+	_sim_strip.alignment = BoxContainer.ALIGNMENT_CENTER
+	_sim_strip.add_theme_constant_override("separation", 10)
+	box.add_child(_sim_strip)
+
+	_sim_feed = ItemList.new()
+	_sim_feed.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(_sim_feed)
+
+	var buttons := HBoxContainer.new()
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	buttons.add_theme_constant_override("separation", 12)
+	box.add_child(buttons)
+	_sim_pause_button = Button.new()
+	_sim_pause_button.text = "⏸ Pause"
+	_sim_pause_button.pressed.connect(_on_sim_pause_toggle)
+	buttons.add_child(_sim_pause_button)
+	_sim_close_button = Button.new()
+	_sim_close_button.text = "Anhalten & zur Zentrale"
+	_sim_close_button.pressed.connect(_close_sim)
+	buttons.add_child(_sim_close_button)
+	_sim_match_button = Button.new()
+	_sim_match_button.text = "▶  Spieltag anpfeifen"
+	UITheme.make_primary(_sim_match_button)
+	_sim_match_button.visible = false
+	_sim_match_button.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/match.tscn"))
+	buttons.add_child(_sim_match_button)
+
+	_sim_timer = Timer.new()
+	_sim_timer.wait_time = 0.5
+	_sim_timer.timeout.connect(_sim_tick)
+	add_child(_sim_timer)
+
+func _start_week_sim() -> void:
+	_sim_feed.clear()
+	_sim_match_button.visible = false
+	_sim_pause_button.visible = true
+	_sim_pause_button.text = "⏸ Pause"
+	_sim_overlay.visible = true
+	_update_sim_display()
+	_sim_timer.start()
+
+func _sim_tick() -> void:
+	if Game.is_matchday_today() or Game.season_over():
+		_finish_sim()
+		return
+	var r: Dictionary = Game.advance_day()
+	for e in r.news:
+		_sim_feed.add_item("%s  –  %s" % [e.day, e.text])
+		_sim_feed.ensure_current_is_visible()
+	_update_sim_display()
+	update_topbar()
+	if not r.decision.is_empty():
+		_sim_timer.stop()
+		_pending_decision = r.decision
+		_decision_dialog.title = r.decision.title
+		_decision_dialog.dialog_text = r.decision.text + "\n"
+		_decision_dialog.ok_button_text = r.decision.options[0]
+		_decision_dialog.cancel_button_text = r.decision.options[1]
+		_decision_dialog.popup_centered()
+		return
+	if Game.is_matchday_today():
+		_finish_sim()
+
+func _on_decision(choice: int) -> void:
+	if _pending_decision.is_empty():
+		return
+	var result := Game.resolve_decision(_pending_decision, choice)
+	_pending_decision = {}
+	if not result.is_empty():
+		_sim_feed.add_item("%s  –  %s" % [result.day, result.text])
+	update_topbar()
+	if _sim_overlay.visible:
+		_sim_timer.start()
+
+func _on_sim_pause_toggle() -> void:
+	if _sim_timer.is_stopped():
+		_sim_timer.start()
+		_sim_pause_button.text = "⏸ Pause"
+	else:
+		_sim_timer.stop()
+		_sim_pause_button.text = "▶ Fortsetzen"
+
+func _finish_sim() -> void:
+	_sim_timer.stop()
+	_update_sim_display()
+	update_topbar()
+	if Game.is_matchday_today():
+		_sim_date_label.text = "SPIELTAG!  %s" % Game.date_label()
+		_sim_pause_button.visible = false
+		_sim_match_button.visible = true
+	else:
+		_close_sim()
+
+func _close_sim() -> void:
+	_sim_timer.stop()
+	_sim_overlay.visible = false
 	update_topbar()
 	_refresh_active_screen()
-	_show_day_report(events, "Bericht bis zum Spieltag")
 
-func _show_day_report(events: Array, title: String) -> void:
-	if events.is_empty():
-		return
-	_report_dialog.title = title
-	_report_list.clear()
-	for i in mini(events.size(), 20):
-		var e: Dictionary = events[i]
-		_report_list.add_item("%s  –  %s" % [e.day, e.text])
-	_report_dialog.popup_centered()
+## Wochenstreifen: Mo–So der aktuellen Woche, heutiger Tag und Spieltag markiert.
+func _update_sim_display() -> void:
+	_sim_date_label.text = Game.date_label()
+	while _sim_strip.get_child_count() > 0:
+		var child := _sim_strip.get_child(0)
+		_sim_strip.remove_child(child)
+		child.free()
+	var today := Game.date_unix()
+	var weekday_mo: int = (int(Game.date_dict().weekday) + 6) % 7
+	var monday := today - weekday_mo * Game.DAY
+	var md_date := Game.matchday_date(Game.matchday()) if not Game.season_over() else -1
+	for i in 7:
+		var day_unix: int = monday + i * Game.DAY
+		var d: Dictionary = Time.get_datetime_dict_from_unix_time(day_unix)
+		var cell := PanelContainer.new()
+		cell.custom_minimum_size = Vector2(96, 64)
+		var style := UITheme.box(UITheme.FIELD, 8, UITheme.BORDER, 6)
+		if day_unix == md_date:
+			style.bg_color = Color(Game.my_club().color).darkened(0.5)
+		if day_unix == today:
+			style.border_color = UITheme.ACCENT
+			style.set_border_width_all(2)
+		cell.add_theme_stylebox_override("panel", style)
+		var cell_label := Label.new()
+		cell_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cell_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cell_label.text = "%s\n%02d.%02d." % [Game.WEEKDAYS[int(d.weekday)], int(d.day), int(d.month)]
+		if day_unix == md_date:
+			cell_label.text += "\n⚽"
+		cell.add_child(cell_label)
+		_sim_strip.add_child(cell)
 
 func _on_season_dialog_confirmed() -> void:
 	update_topbar()
