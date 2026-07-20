@@ -45,6 +45,8 @@ var _chairman := ""
 # Aktuelles Angebot des Vorstands
 var _offer_salary := 20000
 var _offer_bonus := 0
+var _offer_win := 0        # Siegprämie pro gewonnenem Spiel
+var _offer_transfer := 0   # Transferbudget-Zusage (einmalig bei Amtsantritt)
 var _years := 2
 
 # Verhandlungszustand
@@ -58,10 +60,16 @@ var _offer_salary_label: Label
 var _offer_bonus_label: Label
 var _patience_bar: ProgressBar
 var _patience_label: Label
+var _offer_win_label: Label
+var _offer_transfer_label: Label
 var _salary_slider: HSlider
 var _salary_value: Label
 var _bonus_slider: HSlider
 var _bonus_value: Label
+var _win_slider: HSlider
+var _win_value: Label
+var _transfer_slider: HSlider
+var _transfer_value: Label
 var _year_buttons: Array = []
 var _present_button: Button
 var _sign_button: Button
@@ -77,6 +85,8 @@ func _ready() -> void:
 	_tier = int(_def.league)
 	_offer_salary = Game.board_salary(int(_def.strength))
 	_offer_bonus = int(_offer_salary * 2 / 5000.0) * 5000
+	_offer_win = maxi(int(_offer_salary / 20.0 / 500.0) * 500, 1000)
+	_offer_transfer = int(_budget() * 0.10 / 100000.0) * 100000
 	_chairman = _def.get("chairman", "der Vorstand")
 	_build_ui()
 	_say(OPENING_LINES.pick_random())
@@ -99,7 +109,7 @@ func _build_ui() -> void:
 
 	# ============================================================ Linke Hälfte: Der Vorstand
 	var left_card := UITheme.card()
-	left_card.custom_minimum_size = Vector2(560, 620)
+	left_card.custom_minimum_size = Vector2(560, 700)
 	columns.add_child(left_card)
 	var left := VBoxContainer.new()
 	left.add_theme_constant_override("separation", 12)
@@ -158,6 +168,12 @@ func _build_ui() -> void:
 	offer_grid.add_child(_dim("Erfolgsprämie:"))
 	_offer_bonus_label = _big_value("")
 	offer_grid.add_child(_offer_bonus_label)
+	offer_grid.add_child(_dim("Siegprämie:"))
+	_offer_win_label = _big_value("")
+	offer_grid.add_child(_offer_win_label)
+	offer_grid.add_child(_dim("Transferbudget:"))
+	_offer_transfer_label = _big_value("")
+	offer_grid.add_child(_offer_transfer_label)
 	offer_grid.add_child(_dim("Saisonziel:"))
 	offer_grid.add_child(_big_value(_goal().text))
 	offer_grid.add_child(_dim("Vereinsbudget:"))
@@ -185,7 +201,7 @@ func _build_ui() -> void:
 
 	# ============================================================ Rechte Hälfte: Deine Forderungen
 	var right_card := UITheme.card()
-	right_card.custom_minimum_size = Vector2(560, 620)
+	right_card.custom_minimum_size = Vector2(560, 700)
 	columns.add_child(right_card)
 	var right := VBoxContainer.new()
 	right.add_theme_constant_override("separation", 12)
@@ -236,6 +252,40 @@ func _build_ui() -> void:
 	_bonus_value = _big_value("")
 	_bonus_value.custom_minimum_size = Vector2(130, 0)
 	bonus_row.add_child(_bonus_value)
+
+	right.add_child(_dim("Siegprämie pro gewonnenem Spiel:"))
+	var win_row := HBoxContainer.new()
+	win_row.add_theme_constant_override("separation", 12)
+	right.add_child(win_row)
+	_win_slider = HSlider.new()
+	_win_slider.min_value = 0
+	_win_slider.max_value = _offer_win * 6
+	_win_slider.step = 500
+	_win_slider.value = _offer_win
+	_win_slider.custom_minimum_size = Vector2(320, 0)
+	_win_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_win_slider.value_changed.connect(func(_v): _refresh_demands())
+	win_row.add_child(_win_slider)
+	_win_value = _big_value("")
+	_win_value.custom_minimum_size = Vector2(130, 0)
+	win_row.add_child(_win_value)
+
+	right.add_child(_dim("Transferbudget-Zusage des Vorstands:"))
+	var transfer_row := HBoxContainer.new()
+	transfer_row.add_theme_constant_override("separation", 12)
+	right.add_child(transfer_row)
+	_transfer_slider = HSlider.new()
+	_transfer_slider.min_value = 0
+	_transfer_slider.max_value = _budget() * 0.4
+	_transfer_slider.step = 100000
+	_transfer_slider.value = _offer_transfer
+	_transfer_slider.custom_minimum_size = Vector2(320, 0)
+	_transfer_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_transfer_slider.value_changed.connect(func(_v): _refresh_demands())
+	transfer_row.add_child(_transfer_slider)
+	_transfer_value = _big_value("")
+	_transfer_value.custom_minimum_size = Vector2(130, 0)
+	transfer_row.add_child(_transfer_value)
 
 	right.add_child(_dim("Vertragslaufzeit:"))
 	var years_row := HBoxContainer.new()
@@ -304,14 +354,17 @@ func _on_present() -> void:
 		return
 	var demand_salary := int(_salary_slider.value)
 	var demand_bonus := int(_bonus_slider.value)
+	var demand_win := int(_win_slider.value)
+	var demand_transfer := int(_transfer_slider.value)
 	var salary_excess := float(demand_salary - _offer_salary) / _offer_salary
 	var bonus_excess := maxf(0.0, float(demand_bonus - _offer_bonus) / (_offer_salary * 6.0))
-	var aggressiveness := salary_excess + bonus_excess * 0.6
+	var win_excess := maxf(0.0, float(demand_win - _offer_win) / (_offer_salary * 0.25))
+	var transfer_excess := maxf(0.0, float(demand_transfer - _offer_transfer) / maxf(_budget() * 0.4, 1.0))
+	var aggressiveness := salary_excess + bonus_excess * 0.6 + win_excess * 0.4 + transfer_excess * 0.7
 
 	if aggressiveness <= 0.001:
 		# Forderung liegt auf oder unter dem Angebot – der Vorstand schlägt sofort ein
-		_offer_salary = demand_salary
-		_offer_bonus = demand_bonus
+		_apply_demands(demand_salary, demand_bonus, demand_win, demand_transfer)
 		_say(PLEASED_LINES.pick_random())
 		_refresh()
 		_reach_agreement()
@@ -327,29 +380,41 @@ func _on_present() -> void:
 		chance += 0.10
 	if randf() < clampf(chance, 0.05, 0.95):
 		# Der Vorstand akzeptiert dein Paket – damit ist die Einigung da
-		_offer_salary = demand_salary
-		_offer_bonus = demand_bonus
+		_apply_demands(demand_salary, demand_bonus, demand_win, demand_transfer)
 		_say(ACCEPT_LINES.pick_random())
 		_refresh()
 		_reach_agreement()
 		return
 	elif randf() < 0.6:
 		# Gegenangebot: der Vorstand kommt dir einen Teil des Weges entgegen
-		_offer_salary = int((_offer_salary + (demand_salary - _offer_salary) * randf_range(0.3, 0.6)) / 1000.0) * 1000
-		_offer_bonus = int((_offer_bonus + maxi(0, demand_bonus - _offer_bonus) * randf_range(0.3, 0.6)) / 5000.0) * 5000
-		_say(COUNTER_LINES.pick_random() % ("%s plus %s Prämie" % [Fmt.money(_offer_salary), Fmt.money(_offer_bonus)]))
+		var meet := randf_range(0.3, 0.6)
+		_offer_salary = int((_offer_salary + (demand_salary - _offer_salary) * meet) / 1000.0) * 1000
+		_offer_bonus = int((_offer_bonus + maxi(0, demand_bonus - _offer_bonus) * meet) / 5000.0) * 5000
+		_offer_win = int((_offer_win + maxi(0, demand_win - _offer_win) * meet) / 500.0) * 500
+		_offer_transfer = int((_offer_transfer + maxi(0, demand_transfer - _offer_transfer) * meet) / 100000.0) * 100000
+		_say(COUNTER_LINES.pick_random() % ("%s Gehalt, %s Prämie, %s je Sieg und %s Transferbudget" % [
+			Fmt.money(_offer_salary), Fmt.money(_offer_bonus), Fmt.money(_offer_win), Fmt.money(_offer_transfer)]))
 	else:
 		_say(DECLINE_LINES.pick_random())
 	if _patience <= 35.0 and not _broken_off:
 		_dialog_label.text += "\n" + WARNING_LINES.pick_random()
 	_refresh()
 
+func _apply_demands(salary: int, bonus: int, win: int, transfer: int) -> void:
+	_offer_salary = salary
+	_offer_bonus = bonus
+	_offer_win = win
+	_offer_transfer = transfer
+
 ## Einigung: Konditionen einfrieren und das Bestätigungs-Popup zeigen.
 func _reach_agreement() -> void:
 	if _broken_off or _agreed:
 		return
 	_agreed = true
-	_agreed_terms = {"salary": _offer_salary, "bonus": _offer_bonus, "years": _years}
+	_agreed_terms = {
+		"salary": _offer_salary, "bonus": _offer_bonus, "years": _years,
+		"win": _offer_win, "transfer": _offer_transfer,
+	}
 	_freeze_inputs()
 	_agreement_dialog.dialog_text = "\n".join([
 		"Handschlag mit %s – die Konditionen stehen:" % _chairman,
@@ -357,6 +422,8 @@ func _reach_agreement() -> void:
 		"Trainergehalt: %s pro Monat" % Fmt.money(_offer_salary),
 		"Vertragslaufzeit: %d Jahr%s" % [_years, "" if _years == 1 else "e"],
 		"Erfolgsprämie: %s bei „%s“" % [Fmt.money(_offer_bonus), _goal().text],
+		"Siegprämie: %s pro gewonnenem Spiel" % Fmt.money(_offer_win),
+		"Transferbudget-Zusage: %s" % Fmt.money(_offer_transfer),
 		"",
 		"Nach der Einigung sind keine Änderungen mehr möglich.",
 	])
@@ -367,6 +434,8 @@ func _freeze_inputs() -> void:
 	_sign_button.disabled = true
 	_salary_slider.editable = false
 	_bonus_slider.editable = false
+	_win_slider.editable = false
+	_transfer_slider.editable = false
 	for b in _year_buttons:
 		b.disabled = true
 
@@ -436,6 +505,8 @@ func _build_signature_overlay() -> void:
 		"§1  Laufzeit: %d Jahr%s ab Vertragsunterzeichnung" % [int(_agreed_terms.get("years", _years)), "" if int(_agreed_terms.get("years", _years)) == 1 else "e"],
 		"§2  Vergütung: %s pro Monat" % Fmt.money(int(_agreed_terms.get("salary", _offer_salary))),
 		"§3  Erfolgsprämie: %s bei Erreichen des Saisonziels „%s“" % [Fmt.money(int(_agreed_terms.get("bonus", _offer_bonus))), _goal().text],
+		"§4  Siegprämie: %s je gewonnenem Pflichtspiel" % Fmt.money(int(_agreed_terms.get("win", _offer_win))),
+		"§5  Transferbudget: Der Verein stellt zusätzlich %s bereit" % Fmt.money(int(_agreed_terms.get("transfer", _offer_transfer))),
 	])
 	doc.add_child(doc_text)
 
@@ -486,6 +557,8 @@ func _do_sign() -> void:
 	Game.setup["coach_salary"] = int(_agreed_terms.get("salary", _offer_salary))
 	Game.setup["coach_years"] = int(_agreed_terms.get("years", _years))
 	Game.setup["goal_bonus"] = int(_agreed_terms.get("bonus", _offer_bonus))
+	Game.setup["win_bonus"] = int(_agreed_terms.get("win", _offer_win))
+	Game.setup["transfer_pledge"] = int(_agreed_terms.get("transfer", _offer_transfer))
 	Game.setup["season_goal"] = _goal()
 	Game.new_game(_club_id)
 	get_tree().change_scene_to_file("res://scenes/hub.tscn")
@@ -540,6 +613,8 @@ func _say(text: String) -> void:
 func _refresh() -> void:
 	_offer_salary_label.text = "%s / Monat" % Fmt.money(_offer_salary)
 	_offer_bonus_label.text = Fmt.money(_offer_bonus)
+	_offer_win_label.text = "%s / Sieg" % Fmt.money(_offer_win)
+	_offer_transfer_label.text = Fmt.money(_offer_transfer)
 	_patience_bar.value = _patience
 	if _broken_off:
 		_patience_label.text = "Gespräch beendet"
@@ -558,11 +633,13 @@ func _refresh() -> void:
 func _refresh_demands() -> void:
 	_salary_value.text = Fmt.money(int(_salary_slider.value))
 	_bonus_value.text = Fmt.money(int(_bonus_slider.value))
+	_win_value.text = Fmt.money(int(_win_slider.value))
+	_transfer_value.text = Fmt.money(int(_transfer_slider.value))
 	if _broken_off:
 		_agreement_label.text = "Der Vorstand hat die Verhandlung abgebrochen."
 	else:
-		_agreement_label.text = "Bei Unterschrift jetzt: %s/Monat  ·  %d Jahre  ·  %s Prämie bei „%s“" % [
-			Fmt.money(_offer_salary), _years, Fmt.money(_offer_bonus), _goal().text]
+		_agreement_label.text = "Aktuelles Paket: %s/Monat  ·  %d Jahre  ·  %s Erfolgsprämie  ·  %s je Sieg  ·  %s Transferbudget" % [
+			Fmt.money(_offer_salary), _years, Fmt.money(_offer_bonus), Fmt.money(_offer_win), Fmt.money(_offer_transfer)]
 
 func _budget() -> int:
 	var factor: float = Game.DIFFICULTY_FACTORS.get(Game.setup.get("difficulty", "Normal"), 1.0)

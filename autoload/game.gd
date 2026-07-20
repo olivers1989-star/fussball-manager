@@ -41,6 +41,7 @@ var training_focus := "Ausgewogen"
 var coach_salary := 20000      # Dein Trainergehalt pro Monat (in der Verhandlung ausgehandelt)
 var coach_contract_years := 2
 var goal_bonus := 0            # Ausgehandelte Erfolgsprämie bei Erreichen des Saisonziels
+var win_bonus := 0             # Ausgehandelte Siegprämie pro gewonnenem Spiel
 var coach_money := 0           # Dein persönliches Trainerkonto (Gehalt + Prämien)
 var season_goal := {}          # Saisonziel des Vorstands: {text, position}
 var my_club_id := -1
@@ -70,11 +71,39 @@ func new_game(p_club_id: int) -> void:
 	coach_salary = int(setup.get("coach_salary", board_salary(my_club().base_strength)))
 	coach_contract_years = int(setup.get("coach_years", 2))
 	goal_bonus = int(setup.get("goal_bonus", 0))
+	win_bonus = int(setup.get("win_bonus", 0))
 	coach_money = 0
 	season_goal = setup.get("season_goal", _board_goal_for(my_club()))
 	transactions.clear()
 	initialized = true
 	my_club().budget = int(my_club().budget * DIFFICULTY_FACTORS.get(difficulty, 1.0))
+	# Ausgehandelte Transferbudget-Zusage des Vorstands
+	var pledge := int(setup.get("transfer_pledge", 0))
+	if pledge > 0:
+		my_club().budget += pledge
+		log_transaction("Transferbudget-Zusage des Vorstands", pledge)
+
+# ------------------------------------------------------------------ Trainerprofile (wiederverwendbar)
+
+const PROFILES_PATH := "user://trainer_profiles.json"
+
+func list_profiles() -> Array:
+	var f := FileAccess.open(PROFILES_PATH, FileAccess.READ)
+	if f == null:
+		return []
+	var data: Variant = JSON.parse_string(f.get_as_text())
+	if data is Dictionary:
+		return data.get("profiles", [])
+	return []
+
+## Speichert ein Trainerprofil (überschreibt ein vorhandenes mit gleichem Namen).
+func save_profile(profile: Dictionary) -> void:
+	var profiles := list_profiles().filter(func(p):
+		return p.get("first", "") != profile.get("first", "") or p.get("last", "") != profile.get("last", ""))
+	profiles.append(profile)
+	var f := FileAccess.open(PROFILES_PATH, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify({"profiles": profiles}))
 
 # ------------------------------------------------------------------ Vorstand
 
@@ -264,6 +293,14 @@ func _apply_matchday_finances() -> void:
 			var coach_cost := int(coach_salary * 12.0 / 34.0)
 			c.budget -= coach_cost
 			coach_money += coach_cost
+			# Siegprämie bei gewonnenem Spiel
+			if win_bonus > 0 and not f.is_empty() and f.played:
+				var my_goals: int = int(f.hg) if int(f.home) == cid else int(f.ag)
+				var their_goals: int = int(f.ag) if int(f.home) == cid else int(f.hg)
+				if my_goals > their_goals:
+					c.budget -= win_bonus
+					coach_money += win_bonus
+					log_transaction("Siegprämie Trainer", -win_bonus)
 			if ticket > 0:
 				log_transaction("Ticketeinnahmen (%s)" % c.stadium, ticket)
 			log_transaction("Sponsor: %s" % c.sponsor_name, c.sponsor_per_md)
@@ -478,6 +515,7 @@ func save_game() -> String:
 			"coach_salary": coach_salary,
 			"coach_years": coach_contract_years,
 			"goal_bonus": goal_bonus,
+			"win_bonus": win_bonus,
 			"coach_money": coach_money,
 			"season_goal": season_goal,
 			"my_club_id": my_club_id,
@@ -536,6 +574,7 @@ func load_game(path: String) -> bool:
 	coach_salary = int(data.meta.get("coach_salary", 20000))
 	coach_contract_years = int(data.meta.get("coach_years", 2))
 	goal_bonus = int(data.meta.get("goal_bonus", 0))
+	win_bonus = int(data.meta.get("win_bonus", 0))
 	coach_money = int(data.meta.get("coach_money", 0))
 	season_goal = data.meta.get("season_goal", {})
 	my_club_id = int(data.meta.my_club_id)

@@ -61,10 +61,10 @@ func refresh() -> void:
 	for key in Game.SKILLS:
 		skill_parts.append("%s %d" % [Game.SKILLS[key], Game.skill(key)])
 	var origin_part: String = (" aus " + Game.manager_origin) if not Game.manager_origin.is_empty() else ""
-	_profile.text = "Trainer: %d Jahre%s (%s)  ·  Ruf: %d  ·  Gehalt: %s/Monat  ·  Kontostand: %s  ·  Prämie bei Zielerreichung: %s  ·  Fähigkeiten: %s" % [
+	_profile.text = "Trainer: %d Jahre%s (%s)  ·  Ruf: %d  ·  Gehalt: %s/Monat  ·  Kontostand: %s  ·  Erfolgsprämie: %s  ·  Siegprämie: %s  ·  Fähigkeiten: %s" % [
 		Game.manager_age(), origin_part, Game.manager_nat,
 		int(Game.reputation), Fmt.money(Game.coach_salary), Fmt.money(Game.coach_money),
-		Fmt.money(Game.goal_bonus), " · ".join(skill_parts)]
+		Fmt.money(Game.goal_bonus), Fmt.money(Game.win_bonus), " · ".join(skill_parts)]
 
 	var f := Game.next_fixture(c.id)
 	if f.is_empty():

@@ -18,7 +18,8 @@ const SKILL_HINTS := {
 	"jugend": "Stärkerer Nachwuchs zum Saisonwechsel",
 }
 
-var _name_edit: LineEdit
+var _first_edit: LineEdit
+var _last_edit: LineEdit
 var _day_spin: SpinBox
 var _month_select: OptionButton
 var _year_spin: SpinBox
@@ -27,6 +28,9 @@ var _nat_select: OptionButton
 var _skill_values := {}
 var _skill_labels := {}
 var _points_label: Label
+var _profile_select: OptionButton
+var _profile_status: Label
+var _profiles: Array = []
 
 func _ready() -> void:
 	for key in Game.SKILLS:
@@ -65,18 +69,42 @@ func _ready() -> void:
 	columns.add_child(left)
 	left.add_child(_section_label("Persönliche Daten"))
 
+	# Gespeicherte Profile
+	var profile_row := HBoxContainer.new()
+	profile_row.add_theme_constant_override("separation", 8)
+	left.add_child(profile_row)
+	_profile_select = OptionButton.new()
+	_profile_select.custom_minimum_size = Vector2(230, 0)
+	_profile_select.item_selected.connect(_on_profile_selected)
+	profile_row.add_child(_profile_select)
+	var save_profile_button := Button.new()
+	save_profile_button.text = "Profil speichern"
+	save_profile_button.pressed.connect(_on_save_profile)
+	profile_row.add_child(save_profile_button)
+	_profile_status = Label.new()
+	_profile_status.add_theme_color_override("font_color", Color("#64748b"))
+	profile_row.add_child(_profile_status)
+	_reload_profiles()
+
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 16)
 	grid.add_theme_constant_override("v_separation", 12)
 	left.add_child(grid)
 
-	grid.add_child(_form_label("Name:"))
-	_name_edit = LineEdit.new()
-	_name_edit.placeholder_text = "Dein Trainername"
-	_name_edit.custom_minimum_size = Vector2(300, 0)
-	_name_edit.add_theme_font_size_override("font_size", 19)
-	grid.add_child(_name_edit)
+	grid.add_child(_form_label("Vorname:"))
+	_first_edit = LineEdit.new()
+	_first_edit.placeholder_text = "Vorname"
+	_first_edit.custom_minimum_size = Vector2(300, 0)
+	_first_edit.add_theme_font_size_override("font_size", 19)
+	grid.add_child(_first_edit)
+
+	grid.add_child(_form_label("Nachname:"))
+	_last_edit = LineEdit.new()
+	_last_edit.placeholder_text = "Nachname"
+	_last_edit.custom_minimum_size = Vector2(300, 0)
+	_last_edit.add_theme_font_size_override("font_size", 19)
+	grid.add_child(_last_edit)
 
 	grid.add_child(_form_label("Geburtsdatum:"))
 	var birth_row := HBoxContainer.new()
@@ -207,32 +235,80 @@ func _update_skill_display() -> void:
 func _restore_setup() -> void:
 	if not Game.setup.has("name"):
 		return
-	_name_edit.text = Game.setup.name
-	var bd: Dictionary = Game.setup.get("birthday", {"day": 1, "month": 1, "year": 1986})
-	_day_spin.value = bd.day
-	_month_select.select(bd.month - 1)
-	_year_spin.value = bd.year
-	_origin_edit.text = Game.setup.get("origin", "")
+	_apply_profile({
+		"first": Game.setup.get("first_name", ""),
+		"last": Game.setup.get("last_name", ""),
+		"birthday": Game.setup.get("birthday", {"day": 1, "month": 1, "year": 1986}),
+		"origin": Game.setup.get("origin", ""),
+		"nat": Game.setup.get("nat", "Deutschland"),
+		"skills": Game.setup.get("skills", {}),
+	})
+
+# ------------------------------------------------------------------ Profile speichern/laden
+
+func _collect_profile() -> Dictionary:
+	return {
+		"first": _first_edit.text.strip_edges(),
+		"last": _last_edit.text.strip_edges(),
+		"birthday": {
+			"day": int(_day_spin.value),
+			"month": _month_select.selected + 1,
+			"year": int(_year_spin.value),
+		},
+		"origin": _origin_edit.text.strip_edges(),
+		"nat": _nat_select.get_item_text(_nat_select.selected),
+		"skills": _skill_values.duplicate(),
+	}
+
+func _apply_profile(p: Dictionary) -> void:
+	_first_edit.text = p.get("first", "")
+	_last_edit.text = p.get("last", "")
+	var bd: Dictionary = p.get("birthday", {"day": 1, "month": 1, "year": 1986})
+	_day_spin.value = int(bd.day)
+	_month_select.select(int(bd.month) - 1)
+	_year_spin.value = int(bd.year)
+	_origin_edit.text = p.get("origin", "")
 	for i in _nat_select.item_count:
-		if _nat_select.get_item_text(i) == Game.setup.get("nat", ""):
+		if _nat_select.get_item_text(i) == p.get("nat", ""):
 			_nat_select.select(i)
 			break
-	var saved_skills: Dictionary = Game.setup.get("skills", {})
-	for key in saved_skills:
-		if _skill_values.has(key):
-			_skill_values[key] = int(saved_skills[key])
+	for key in _skill_values:
+		_skill_values[key] = clampi(int(p.get("skills", {}).get(key, 1)), 1, Game.SKILL_MAX)
+	_update_skill_display()
+
+func _reload_profiles() -> void:
+	_profiles = Game.list_profiles()
+	_profile_select.clear()
+	_profile_select.add_item("– Gespeichertes Profil laden –")
+	for p in _profiles:
+		_profile_select.add_item("%s %s" % [p.get("first", ""), p.get("last", "")])
+
+func _on_profile_selected(index: int) -> void:
+	if index <= 0 or index > _profiles.size():
+		return
+	_apply_profile(_profiles[index - 1])
+	_profile_status.text = "Profil geladen ✓"
+
+func _on_save_profile() -> void:
+	var profile := _collect_profile()
+	if profile.first.is_empty() and profile.last.is_empty():
+		_profile_status.text = "Bitte erst einen Namen eingeben."
+		return
+	Game.save_profile(profile)
+	_reload_profiles()
+	_profile_status.text = "Profil gespeichert ✓"
+
+# ------------------------------------------------------------------ Weiter
 
 func _on_next() -> void:
-	var trainer_name := _name_edit.text.strip_edges()
-	if trainer_name.is_empty():
-		trainer_name = "Der Trainer"
-	Game.setup["name"] = trainer_name
-	Game.setup["birthday"] = {
-		"day": int(_day_spin.value),
-		"month": _month_select.selected + 1,
-		"year": int(_year_spin.value),
-	}
-	Game.setup["origin"] = _origin_edit.text.strip_edges()
-	Game.setup["nat"] = _nat_select.get_item_text(_nat_select.selected)
-	Game.setup["skills"] = _skill_values.duplicate()
+	var profile := _collect_profile()
+	var first: String = profile.first if not profile.first.is_empty() else "Der"
+	var last: String = profile.last if not profile.last.is_empty() else "Trainer"
+	Game.setup["first_name"] = first
+	Game.setup["last_name"] = last
+	Game.setup["name"] = "%s %s" % [first, last]
+	Game.setup["birthday"] = profile.birthday
+	Game.setup["origin"] = profile.origin
+	Game.setup["nat"] = profile.nat
+	Game.setup["skills"] = profile.skills
 	get_tree().change_scene_to_file("res://scenes/spielmodus.tscn")
