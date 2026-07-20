@@ -311,6 +311,8 @@ func _on_offer_accepted() -> void:
 func _show_season_end() -> void:
 	var s := Game.end_season()
 	var goal_line := "Saisonziel „%s“: %s" % [s.goal_text, "ERREICHT ✓" if s.goal_achieved else "verfehlt ✗"]
+	if int(s.get("bonus_paid", 0)) > 0:
+		goal_line += "  –  Erfolgsprämie: %s" % Fmt.money(int(s.bonus_paid))
 	var lines := [
 		"%s ist beendet!" % s.season,
 		"",

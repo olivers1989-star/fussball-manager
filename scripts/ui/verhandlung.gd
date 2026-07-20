@@ -1,31 +1,80 @@
 extends Control
-## Vertragsverhandlung mit dem Vorstand vor Amtsantritt:
-## Gehalt (nachverhandelbar), Vertragslaufzeit und Saisonziel.
+## Vertragsverhandlung mit dem Vorstand – zweigeteilt:
+## Links: der Vorstand (Gesprächspartner, Gesprächsverlauf, aktuelles Angebot, Geduld).
+## Rechts: dein Forderungspaket (Gehalt, Laufzeit, Erfolgsprämie) zum Vortragen.
+## Der Vorstand akzeptiert, macht Gegenangebote oder bricht bei Überzogenheit ab.
 
-const DEMANDS := [
-	{"label": "+10 % Gehalt", "pct": 0.10},
-	{"label": "+25 % Gehalt", "pct": 0.25},
-	{"label": "+50 % Gehalt", "pct": 0.50},
+const OPENING_LINES := [
+	"Schön, dass Sie den Weg zu uns gefunden haben. Wir trauen Ihnen einiges zu – hier ist unser Angebot.",
+	"Wir haben Ihre Arbeit verfolgt und sehen Potenzial. Das hier können wir Ihnen bieten.",
+	"Willkommen! Reden wir nicht lange um den heißen Brei – das ist unser Angebot.",
+]
+const ACCEPT_LINES := [
+	"Sie verhandeln hart, aber fair. Einverstanden – so machen wir es.",
+	"In Ordnung, das können wir gerade noch darstellen.",
+	"Gut. Der Vorstand zieht mit – das Paket steht.",
+]
+const COUNTER_LINES := [
+	"So weit können wir nicht gehen. Aber wir kommen Ihnen entgegen: %s.",
+	"Das übersteigt unseren Rahmen. Unser letztes Wort in dieser Runde: %s.",
+	"Wir treffen uns in der Mitte – %s. Mehr ist gerade nicht drin.",
+]
+const DECLINE_LINES := [
+	"Das ist deutlich zu viel. Wir bleiben bei unserem Angebot.",
+	"Bei allem Respekt – dafür fehlt uns das Budget. Unser Angebot steht.",
+	"Nein. Überlegen Sie noch einmal, was hier realistisch ist.",
+]
+const PLEASED_LINES := [
+	"Sehr vernünftig. Damit können wir arbeiten.",
+	"Das nenne ich Augenmaß – einverstanden.",
+]
+const WARNING_LINES := [
+	"Ich sage es offen: Unsere Geduld hat Grenzen.",
+	"Wir drehen uns im Kreis. Kommen Sie langsam zum Punkt.",
+]
+const BREAKOFF_LINES := [
+	"So kommen wir nicht zusammen. Der Vorstand beendet das Gespräch – alles Gute für Ihre Zukunft.",
+	"Das war es dann. Wir werden uns anderweitig umsehen.",
 ]
 
 var _club_id := 1
 var _def: Dictionary
 var _tier := 1
-var _salary := 20000
-var _attempts := 2
+var _chairman := ""
 
-var _salary_label: Label
-var _years_select: OptionButton
-var _demand_select: OptionButton
-var _negotiate_button: Button
-var _message: Label
+# Aktuelles Angebot des Vorstands
+var _offer_salary := 20000
+var _offer_bonus := 0
+var _years := 2
+
+# Verhandlungszustand
+var _patience := 100.0
+var _broken_off := false
+
+var _dialog_label: Label
+var _offer_salary_label: Label
+var _offer_bonus_label: Label
+var _patience_bar: ProgressBar
+var _patience_label: Label
+var _salary_slider: HSlider
+var _salary_value: Label
+var _bonus_slider: HSlider
+var _bonus_value: Label
+var _year_buttons: Array = []
+var _present_button: Button
+var _sign_button: Button
+var _agreement_label: Label
 
 func _ready() -> void:
 	_club_id = int(Game.setup.get("club_id", 1))
 	_def = Data.club_defs[_club_id - 1]
 	_tier = int(_def.league)
-	_salary = Game.board_salary(int(_def.strength))
+	_offer_salary = Game.board_salary(int(_def.strength))
+	_offer_bonus = int(_offer_salary * 2 / 5000.0) * 5000
+	_chairman = "%s %s" % [Data.first_names.pick_random(), Data.last_names.pick_random()]
 	_build_ui()
+	_say(OPENING_LINES.pick_random())
+	_refresh()
 
 func _goal() -> Dictionary:
 	var stronger := 0
@@ -34,170 +83,321 @@ func _goal() -> Dictionary:
 			stronger += 1
 	return Game.goal_from_rank(stronger + 1, _tier)
 
-func _budget() -> int:
-	var factor: float = Game.DIFFICULTY_FACTORS.get(Game.setup.get("difficulty", "Normal"), 1.0)
-	var base: int = (int(_def.strength) - 50) * 1200000 if _tier == 1 else (int(_def.strength) - 44) * 400000
-	return int(base * factor)
-
 func _build_ui() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
-	var screen_card := UITheme.card()
-	center.add_child(screen_card)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 14)
-	box.custom_minimum_size = Vector2(720, 0)
-	screen_card.add_child(box)
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 24)
+	center.add_child(columns)
 
-	var step := Label.new()
-	step.text = "Vertragsgespräch"
-	step.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	step.add_theme_color_override("font_color", UITheme.TEXT_DIM)
-	box.add_child(step)
+	# ============================================================ Linke Hälfte: Der Vorstand
+	var left_card := UITheme.card()
+	left_card.custom_minimum_size = Vector2(560, 620)
+	columns.add_child(left_card)
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 12)
+	left_card.add_child(left)
 
-	# Vereinskopf
 	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 16)
-	box.add_child(header)
-	header.add_child(UITheme.club_badge(_def.short, Color(_def.color), 62))
+	header.add_theme_constant_override("separation", 14)
+	left.add_child(header)
+	header.add_child(UITheme.club_badge(_def.short, Color(_def.color), 58))
 	var head_text := VBoxContainer.new()
 	head_text.add_theme_constant_override("separation", 0)
 	head_text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	header.add_child(head_text)
 	var club_name := Label.new()
 	club_name.text = _def.name
-	club_name.add_theme_font_size_override("font_size", 30)
+	club_name.add_theme_font_size_override("font_size", 24)
 	head_text.add_child(club_name)
 	var club_sub := Label.new()
-	club_sub.text = "%s  ·  %s (%s Plätze)" % [
-		"Erste Liga" if _tier == 1 else "Zweite Liga", _def.stadium, Fmt.thousands(int(_def.capacity))]
+	club_sub.text = "%s  ·  %s (%s Plätze)  ·  Teamstärke ~%d" % [
+		"Erste Liga" if _tier == 1 else "Zweite Liga", _def.stadium,
+		Fmt.thousands(int(_def.capacity)), int(_def.strength)]
+	club_sub.add_theme_font_size_override("font_size", 13)
 	club_sub.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	head_text.add_child(club_sub)
 
-	# Vereinsdetails
-	var details := GridContainer.new()
-	details.columns = 2
-	details.add_theme_constant_override("h_separation", 24)
-	details.add_theme_constant_override("v_separation", 8)
-	box.add_child(details)
-	details.add_child(_dim_label("Teamstärke:"))
-	var strength_row := HBoxContainer.new()
-	strength_row.add_theme_constant_override("separation", 10)
-	var bar := ProgressBar.new()
-	bar.min_value = 45
-	bar.max_value = 90
-	bar.value = int(_def.strength)
-	bar.show_percentage = false
-	bar.custom_minimum_size = Vector2(220, 16)
-	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	strength_row.add_child(bar)
-	strength_row.add_child(_value_label("~%d" % int(_def.strength)))
-	details.add_child(strength_row)
-	details.add_child(_dim_label("Vereinsbudget:"))
-	details.add_child(_value_label(Fmt.money(_budget())))
+	var chairman_label := Label.new()
+	chairman_label.text = "Am Tisch: Vorstandsvorsitzender %s" % _chairman
+	chairman_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	left.add_child(chairman_label)
 
-	box.add_child(HSeparator.new())
+	# Gesprächsverlauf
+	var dialog_panel := PanelContainer.new()
+	dialog_panel.add_theme_stylebox_override("panel", UITheme.box(UITheme.FIELD, 10, UITheme.BORDER, 14))
+	dialog_panel.custom_minimum_size = Vector2(0, 110)
+	left.add_child(dialog_panel)
+	_dialog_label = Label.new()
+	_dialog_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_dialog_label.add_theme_font_size_override("font_size", 18)
+	dialog_panel.add_child(_dialog_label)
 
-	# Angebot des Vorstands
+	left.add_child(HSeparator.new())
 	var offer_heading := Label.new()
-	offer_heading.text = "Das Angebot des Vorstands"
-	offer_heading.add_theme_font_size_override("font_size", 22)
+	offer_heading.text = "Aktuelles Angebot des Vorstands"
+	offer_heading.add_theme_font_size_override("font_size", 21)
 	offer_heading.add_theme_color_override("font_color", UITheme.ACCENT)
-	box.add_child(offer_heading)
+	left.add_child(offer_heading)
 
-	var offer := GridContainer.new()
-	offer.columns = 2
-	offer.add_theme_constant_override("h_separation", 24)
-	offer.add_theme_constant_override("v_separation", 10)
-	box.add_child(offer)
-	offer.add_child(_dim_label("Trainergehalt:"))
-	_salary_label = _value_label("")
-	_salary_label.add_theme_font_size_override("font_size", 21)
-	offer.add_child(_salary_label)
-	offer.add_child(_dim_label("Vertragslaufzeit:"))
-	_years_select = OptionButton.new()
+	var offer_grid := GridContainer.new()
+	offer_grid.columns = 2
+	offer_grid.add_theme_constant_override("h_separation", 24)
+	offer_grid.add_theme_constant_override("v_separation", 10)
+	left.add_child(offer_grid)
+	offer_grid.add_child(_dim("Trainergehalt:"))
+	_offer_salary_label = _big_value("")
+	offer_grid.add_child(_offer_salary_label)
+	offer_grid.add_child(_dim("Erfolgsprämie:"))
+	_offer_bonus_label = _big_value("")
+	offer_grid.add_child(_offer_bonus_label)
+	offer_grid.add_child(_dim("Saisonziel:"))
+	offer_grid.add_child(_big_value(_goal().text))
+	offer_grid.add_child(_dim("Vereinsbudget:"))
+	offer_grid.add_child(_big_value(Fmt.money(_budget())))
+
+	var left_spacer := Control.new()
+	left_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	left.add_child(left_spacer)
+
+	# Geduld des Vorstands
+	var patience_row := HBoxContainer.new()
+	patience_row.add_theme_constant_override("separation", 10)
+	left.add_child(patience_row)
+	patience_row.add_child(_dim("Gesprächsklima:"))
+	_patience_bar = ProgressBar.new()
+	_patience_bar.min_value = 0
+	_patience_bar.max_value = 100
+	_patience_bar.show_percentage = false
+	_patience_bar.custom_minimum_size = Vector2(200, 16)
+	_patience_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_patience_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	patience_row.add_child(_patience_bar)
+	_patience_label = Label.new()
+	patience_row.add_child(_patience_label)
+
+	# ============================================================ Rechte Hälfte: Deine Forderungen
+	var right_card := UITheme.card()
+	right_card.custom_minimum_size = Vector2(560, 620)
+	columns.add_child(right_card)
+	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", 12)
+	right_card.add_child(right)
+
+	var your_heading := Label.new()
+	your_heading.text = "Dein Forderungspaket"
+	your_heading.add_theme_font_size_override("font_size", 24)
+	your_heading.add_theme_color_override("font_color", UITheme.ACCENT)
+	right.add_child(your_heading)
+	var your_sub := Label.new()
+	your_sub.text = "Stelle dein Paket zusammen und trage es vor. Aber Vorsicht:\nJede Runde kostet Geduld – überzogene Forderungen lassen das Gespräch platzen."
+	your_sub.add_theme_font_size_override("font_size", 14)
+	your_sub.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	right.add_child(your_sub)
+
+	right.add_child(_vspace(4))
+	right.add_child(_dim("Gehaltsforderung pro Monat:"))
+	var salary_row := HBoxContainer.new()
+	salary_row.add_theme_constant_override("separation", 12)
+	right.add_child(salary_row)
+	_salary_slider = HSlider.new()
+	_salary_slider.min_value = _offer_salary
+	_salary_slider.max_value = _offer_salary * 2.2
+	_salary_slider.step = 1000
+	_salary_slider.value = _offer_salary
+	_salary_slider.custom_minimum_size = Vector2(320, 0)
+	_salary_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_salary_slider.value_changed.connect(func(_v): _refresh_demands())
+	salary_row.add_child(_salary_slider)
+	_salary_value = _big_value("")
+	_salary_value.custom_minimum_size = Vector2(130, 0)
+	salary_row.add_child(_salary_value)
+
+	right.add_child(_dim("Erfolgsprämie bei Zielerreichung:"))
+	var bonus_row := HBoxContainer.new()
+	bonus_row.add_theme_constant_override("separation", 12)
+	right.add_child(bonus_row)
+	_bonus_slider = HSlider.new()
+	_bonus_slider.min_value = 0
+	_bonus_slider.max_value = _offer_salary * 8
+	_bonus_slider.step = 5000
+	_bonus_slider.value = _offer_bonus
+	_bonus_slider.custom_minimum_size = Vector2(320, 0)
+	_bonus_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bonus_slider.value_changed.connect(func(_v): _refresh_demands())
+	bonus_row.add_child(_bonus_slider)
+	_bonus_value = _big_value("")
+	_bonus_value.custom_minimum_size = Vector2(130, 0)
+	bonus_row.add_child(_bonus_value)
+
+	right.add_child(_dim("Vertragslaufzeit:"))
+	var years_row := HBoxContainer.new()
+	years_row.add_theme_constant_override("separation", 10)
+	right.add_child(years_row)
+	var group := ButtonGroup.new()
 	for years in [1, 2, 3]:
-		_years_select.add_item("%d Jahr%s" % [years, "" if years == 1 else "e"])
-	_years_select.select(1)
-	offer.add_child(_years_select)
-	offer.add_child(_dim_label("Saisonziel:"))
-	offer.add_child(_value_label(_goal().text))
+		var b := Button.new()
+		b.toggle_mode = true
+		b.button_group = group
+		b.text = "%d Jahr%s" % [years, "" if years == 1 else "e"]
+		b.custom_minimum_size = Vector2(110, 42)
+		b.set_pressed_no_signal(years == 2)
+		b.pressed.connect(func(): _years = years)
+		years_row.add_child(b)
+		_year_buttons.append(b)
 
-	# Nachverhandeln
-	var negotiate_row := HBoxContainer.new()
-	negotiate_row.add_theme_constant_override("separation", 10)
-	box.add_child(negotiate_row)
-	_demand_select = OptionButton.new()
-	for demand in DEMANDS:
-		_demand_select.add_item(demand.label)
-	negotiate_row.add_child(_demand_select)
-	_negotiate_button = Button.new()
-	_negotiate_button.pressed.connect(_on_negotiate)
-	negotiate_row.add_child(_negotiate_button)
-	_message = Label.new()
-	_message.add_theme_color_override("font_color", UITheme.TEXT_DIM)
-	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_message.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	negotiate_row.add_child(_message)
+	right.add_child(_vspace(4))
+	_present_button = Button.new()
+	_present_button.text = "🗣  Forderungen vortragen"
+	_present_button.add_theme_font_size_override("font_size", 19)
+	_present_button.pressed.connect(_on_present)
+	right.add_child(_present_button)
 
-	# Aktionen
+	var right_spacer := Control.new()
+	right_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right.add_child(right_spacer)
+
+	right.add_child(HSeparator.new())
+	_agreement_label = Label.new()
+	_agreement_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_agreement_label.add_theme_font_size_override("font_size", 15)
+	right.add_child(_agreement_label)
+
 	var buttons := HBoxContainer.new()
-	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
-	buttons.add_theme_constant_override("separation", 14)
-	box.add_child(buttons)
-	var back := Button.new()
-	back.text = "← Zurück"
-	back.custom_minimum_size = Vector2(160, 48)
-	back.pressed.connect(func():
+	buttons.add_theme_constant_override("separation", 12)
+	right.add_child(buttons)
+	var leave := Button.new()
+	leave.text = "Gespräch verlassen"
+	leave.custom_minimum_size = Vector2(180, 48)
+	leave.pressed.connect(func():
 		get_tree().change_scene_to_file(Game.setup.get("origin_scene", "res://scenes/vereinswahl.tscn")))
-	buttons.add_child(back)
-	var sign := Button.new()
-	sign.text = "✍ Vertrag unterschreiben"
-	sign.custom_minimum_size = Vector2(280, 48)
-	sign.add_theme_font_size_override("font_size", 20)
-	UITheme.make_primary(sign)
-	sign.pressed.connect(_on_sign)
-	buttons.add_child(sign)
+	buttons.add_child(leave)
+	_sign_button = Button.new()
+	_sign_button.text = "✍  Vertrag unterschreiben"
+	_sign_button.custom_minimum_size = Vector2(260, 48)
+	_sign_button.add_theme_font_size_override("font_size", 19)
+	UITheme.make_primary(_sign_button)
+	_sign_button.pressed.connect(_on_sign)
+	buttons.add_child(_sign_button)
 
-	_update_labels()
+# ------------------------------------------------------------------ Verhandlungslogik
 
-func _dim_label(text: String) -> Label:
+func _on_present() -> void:
+	if _broken_off:
+		return
+	var demand_salary := int(_salary_slider.value)
+	var demand_bonus := int(_bonus_slider.value)
+	var salary_excess := float(demand_salary - _offer_salary) / _offer_salary
+	var bonus_excess := maxf(0.0, float(demand_bonus - _offer_bonus) / (_offer_salary * 6.0))
+	var aggressiveness := salary_excess + bonus_excess * 0.6
+
+	if aggressiveness <= 0.001:
+		# Forderung liegt auf oder unter dem Angebot – der Vorstand freut sich
+		_offer_salary = demand_salary
+		_offer_bonus = demand_bonus
+		_patience = minf(100.0, _patience + 5.0)
+		_say(PLEASED_LINES.pick_random())
+		_refresh()
+		return
+
+	_patience -= 10.0 + aggressiveness * 45.0 + randf_range(0.0, 6.0)
+	if _patience <= 0.0:
+		_break_off()
+		return
+
+	var chance := 0.75 - aggressiveness * 1.6
+	if Game.setup.get("mode", "") == "vereinsauswahl":
+		chance += 0.10
+	if randf() < clampf(chance, 0.05, 0.95):
+		_offer_salary = demand_salary
+		_offer_bonus = demand_bonus
+		_say(ACCEPT_LINES.pick_random())
+	elif randf() < 0.6:
+		# Gegenangebot: der Vorstand kommt dir einen Teil des Weges entgegen
+		_offer_salary = int((_offer_salary + (demand_salary - _offer_salary) * randf_range(0.3, 0.6)) / 1000.0) * 1000
+		_offer_bonus = int((_offer_bonus + maxi(0, demand_bonus - _offer_bonus) * randf_range(0.3, 0.6)) / 5000.0) * 5000
+		_say(COUNTER_LINES.pick_random() % ("%s plus %s Prämie" % [Fmt.money(_offer_salary), Fmt.money(_offer_bonus)]))
+	else:
+		_say(DECLINE_LINES.pick_random())
+	if _patience <= 35.0 and not _broken_off:
+		_dialog_label.text += "\n" + WARNING_LINES.pick_random()
+	_refresh()
+
+func _break_off() -> void:
+	_broken_off = true
+	_say(BREAKOFF_LINES.pick_random())
+	_present_button.disabled = true
+	_sign_button.disabled = true
+	_salary_slider.editable = false
+	_bonus_slider.editable = false
+	for b in _year_buttons:
+		b.disabled = true
+	# Im Karrieremodus ist dieses Angebot damit vom Tisch
+	if Game.setup.get("mode", "") == "angebote" and Game.setup.has("initial_offers"):
+		Game.setup.initial_offers.erase(_club_id)
+	_refresh()
+
+func _on_sign() -> void:
+	if _broken_off:
+		return
+	Game.setup["coach_salary"] = _offer_salary
+	Game.setup["coach_years"] = _years
+	Game.setup["goal_bonus"] = _offer_bonus
+	Game.setup["season_goal"] = _goal()
+	Game.new_game(_club_id)
+	get_tree().change_scene_to_file("res://scenes/hub.tscn")
+
+# ------------------------------------------------------------------ Anzeige
+
+func _say(text: String) -> void:
+	_dialog_label.text = "„%s“" % text
+
+func _refresh() -> void:
+	_offer_salary_label.text = "%s / Monat" % Fmt.money(_offer_salary)
+	_offer_bonus_label.text = Fmt.money(_offer_bonus)
+	_patience_bar.value = _patience
+	if _broken_off:
+		_patience_label.text = "Gespräch beendet"
+		_patience_label.add_theme_color_override("font_color", UITheme.DANGER)
+	elif _patience > 66.0:
+		_patience_label.text = "konstruktiv"
+		_patience_label.add_theme_color_override("font_color", UITheme.ACCENT)
+	elif _patience > 33.0:
+		_patience_label.text = "angespannt"
+		_patience_label.add_theme_color_override("font_color", UITheme.WARN)
+	else:
+		_patience_label.text = "kurz vor dem Abbruch"
+		_patience_label.add_theme_color_override("font_color", UITheme.DANGER)
+	_refresh_demands()
+
+func _refresh_demands() -> void:
+	_salary_value.text = Fmt.money(int(_salary_slider.value))
+	_bonus_value.text = Fmt.money(int(_bonus_slider.value))
+	if _broken_off:
+		_agreement_label.text = "Der Vorstand hat die Verhandlung abgebrochen."
+	else:
+		_agreement_label.text = "Bei Unterschrift jetzt: %s/Monat  ·  %d Jahre  ·  %s Prämie bei „%s“" % [
+			Fmt.money(_offer_salary), _years, Fmt.money(_offer_bonus), _goal().text]
+
+func _budget() -> int:
+	var factor: float = Game.DIFFICULTY_FACTORS.get(Game.setup.get("difficulty", "Normal"), 1.0)
+	var base: int = (int(_def.strength) - 50) * 1200000 if _tier == 1 else (int(_def.strength) - 44) * 400000
+	return int(base * factor)
+
+func _dim(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	return l
 
-func _value_label(text: String) -> Label:
+func _big_value(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
+	l.add_theme_font_size_override("font_size", 19)
 	return l
 
-func _update_labels() -> void:
-	_salary_label.text = "%s pro Monat" % Fmt.money(_salary)
-	_negotiate_button.text = "Gegenangebot stellen (%d Versuch%s übrig)" % [_attempts, "" if _attempts == 1 else "e"]
-	_negotiate_button.disabled = _attempts <= 0
-
-func _on_negotiate() -> void:
-	if _attempts <= 0:
-		return
-	_attempts -= 1
-	var pct: float = DEMANDS[_demand_select.selected].pct
-	var chance := 0.65 - pct * 1.1
-	if Game.setup.get("mode", "") == "vereinsauswahl":
-		chance += 0.1   # In der freien Vereinswahl will der Verein dich unbedingt
-	if randf() < chance:
-		_salary = int(_salary * (1.0 + pct) / 1000.0) * 1000
-		_message.text = "Der Vorstand akzeptiert dein Gegenangebot!"
-		_message.add_theme_color_override("font_color", UITheme.ACCENT)
-	else:
-		_message.text = "Abgelehnt – der Vorstand bleibt bei seinem Angebot."
-		_message.add_theme_color_override("font_color", UITheme.DANGER)
-	_update_labels()
-
-func _on_sign() -> void:
-	Game.setup["coach_salary"] = _salary
-	Game.setup["coach_years"] = _years_select.selected + 1
-	Game.setup["season_goal"] = _goal()
-	Game.new_game(_club_id)
-	get_tree().change_scene_to_file("res://scenes/hub.tscn")
+func _vspace(height: int) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(0, height)
+	return c

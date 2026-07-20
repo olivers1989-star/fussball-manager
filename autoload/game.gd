@@ -40,6 +40,8 @@ var reputation := 50.0         # Trainer-Ruf, bestimmt im Angebote-Modus die Job
 var training_focus := "Ausgewogen"
 var coach_salary := 20000      # Dein Trainergehalt pro Monat (in der Verhandlung ausgehandelt)
 var coach_contract_years := 2
+var goal_bonus := 0            # Ausgehandelte Erfolgsprämie bei Erreichen des Saisonziels
+var coach_money := 0           # Dein persönliches Trainerkonto (Gehalt + Prämien)
 var season_goal := {}          # Saisonziel des Vorstands: {text, position}
 var my_club_id := -1
 var transactions: Array = []   # {text, amount, matchday, season}
@@ -67,6 +69,8 @@ func new_game(p_club_id: int) -> void:
 	training_focus = "Ausgewogen"
 	coach_salary = int(setup.get("coach_salary", board_salary(my_club().base_strength)))
 	coach_contract_years = int(setup.get("coach_years", 2))
+	goal_bonus = int(setup.get("goal_bonus", 0))
+	coach_money = 0
 	season_goal = setup.get("season_goal", _board_goal_for(my_club()))
 	transactions.clear()
 	initialized = true
@@ -259,6 +263,7 @@ func _apply_matchday_finances() -> void:
 		if cid == my_club_id:
 			var coach_cost := int(coach_salary * 12.0 / 34.0)
 			c.budget -= coach_cost
+			coach_money += coach_cost
 			if ticket > 0:
 				log_transaction("Ticketeinnahmen (%s)" % c.stadium, ticket)
 			log_transaction("Sponsor: %s" % c.sponsor_name, c.sponsor_per_md)
@@ -298,8 +303,13 @@ func end_season() -> Dictionary:
 	var goal_achieved: bool = int(summary.my_position) <= int(season_goal.get("position", 18))
 	summary["goal_text"] = season_goal.get("text", "")
 	summary["goal_achieved"] = goal_achieved
+	summary["bonus_paid"] = 0
 	if goal_achieved:
 		reputation += 1.5
+		if goal_bonus > 0:
+			coach_money += goal_bonus
+			my_club().budget -= goal_bonus
+			summary["bonus_paid"] = goal_bonus
 	else:
 		reputation -= 1.0
 
@@ -467,6 +477,8 @@ func save_game() -> String:
 			"training_focus": training_focus,
 			"coach_salary": coach_salary,
 			"coach_years": coach_contract_years,
+			"goal_bonus": goal_bonus,
+			"coach_money": coach_money,
 			"season_goal": season_goal,
 			"my_club_id": my_club_id,
 			"club": my_club().name,
@@ -523,6 +535,8 @@ func load_game(path: String) -> bool:
 	training_focus = data.meta.get("training_focus", "Ausgewogen")
 	coach_salary = int(data.meta.get("coach_salary", 20000))
 	coach_contract_years = int(data.meta.get("coach_years", 2))
+	goal_bonus = int(data.meta.get("goal_bonus", 0))
+	coach_money = int(data.meta.get("coach_money", 0))
 	season_goal = data.meta.get("season_goal", {})
 	my_club_id = int(data.meta.my_club_id)
 	if season_goal.is_empty():
