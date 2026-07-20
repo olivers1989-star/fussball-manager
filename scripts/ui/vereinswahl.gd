@@ -50,8 +50,9 @@ func _ready() -> void:
 	back.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/spielmodus.tscn"))
 	bottom.add_child(back)
 	_start_button = Button.new()
-	_start_button.text = "Karriere starten"
+	_start_button.text = "Zum Vertragsgespräch →"
 	_start_button.add_theme_font_size_override("font_size", 20)
+	UITheme.make_primary(_start_button)
 	_start_button.disabled = true
 	_start_button.pressed.connect(_on_start)
 	bottom.add_child(_start_button)
@@ -89,5 +90,6 @@ func _on_start() -> void:
 	var item := _club_tree.get_selected()
 	if item == null or item.get_metadata(0) == null:
 		return
-	Game.new_game(int(item.get_metadata(0)))
-	get_tree().change_scene_to_file("res://scenes/hub.tscn")
+	Game.setup["club_id"] = int(item.get_metadata(0))
+	Game.setup["origin_scene"] = "res://scenes/vereinswahl.tscn"
+	get_tree().change_scene_to_file("res://scenes/verhandlung.tscn")

@@ -24,10 +24,12 @@ func _init() -> void:
 func refresh() -> void:
 	var c := Game.my_club()
 	var salaries_month := c.salaries_per_month(Game.world.players)
-	_summary.text = "Budget: %s    ·    Gehälter: %s/Monat (%s je Spieltag)    ·    Sponsor %s: %s je Spieltag    ·    %s: %s Plätze" % [
+	_summary.text = "Budget: %s    ·    Gehälter: %s/Monat (%s je Spieltag)    ·    Trainergehalt: %s/Monat (Vertrag: %d J.)    ·    Sponsor %s: %s je Spieltag    ·    %s: %s Plätze" % [
 		Fmt.money(c.budget),
 		Fmt.money(salaries_month),
 		Fmt.money(c.salaries_per_matchday(Game.world.players)),
+		Fmt.money(Game.coach_salary),
+		Game.coach_contract_years,
 		c.sponsor_name,
 		Fmt.money(c.sponsor_per_md),
 		c.stadium,

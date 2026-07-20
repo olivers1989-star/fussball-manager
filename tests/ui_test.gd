@@ -3,9 +3,9 @@ extends Node
 
 func _ready() -> void:
 	print("=== UI-TEST START ===")
-	# Spielstart-Assistent: Trainer anlegen -> Spielmodus -> Vereinswahl/Angebote
-	Game.setup = {}
-	for scene_path in ["res://scenes/trainer_anlegen.tscn", "res://scenes/spielmodus.tscn", "res://scenes/vereinswahl.tscn", "res://scenes/angebote.tscn"]:
+	# Spielstart-Assistent: Trainer anlegen -> Spielmodus -> Vereinswahl/Angebote -> Verhandlung
+	Game.setup = {"club_id": 5}
+	for scene_path in ["res://scenes/trainer_anlegen.tscn", "res://scenes/spielmodus.tscn", "res://scenes/vereinswahl.tscn", "res://scenes/angebote.tscn", "res://scenes/verhandlung.tscn"]:
 		var screen: Control = load(scene_path).instantiate()
 		add_child(screen)
 		await get_tree().process_frame

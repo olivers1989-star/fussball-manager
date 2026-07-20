@@ -79,8 +79,9 @@ func refresh() -> void:
 			c.stadium if home else opponent.stadium,
 		]
 
-	_position.text = "Tabellenplatz: %d.  ·  %s  ·  Spieltag %d/34" % [
-		Game.my_league().position_of(c.id), Game.season_label(), Game.matchday()]
+	_position.text = "Tabellenplatz: %d.  ·  %s  ·  Spieltag %d/34  ·  Saisonziel: %s" % [
+		Game.my_league().position_of(c.id), Game.season_label(), Game.matchday(),
+		Game.season_goal.get("text", "–")]
 
 	_results.clear()
 	var played := Game.my_league().fixtures_of_club(c.id).filter(func(x): return x.played)

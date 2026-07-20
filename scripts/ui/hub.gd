@@ -310,12 +310,14 @@ func _on_offer_accepted() -> void:
 
 func _show_season_end() -> void:
 	var s := Game.end_season()
+	var goal_line := "Saisonziel „%s“: %s" % [s.goal_text, "ERREICHT ✓" if s.goal_achieved else "verfehlt ✗"]
 	var lines := [
 		"%s ist beendet!" % s.season,
 		"",
 		"Meister Erste Liga: %s" % s.champion1,
 		"Meister Zweite Liga: %s" % s.champion2,
 		"Dein Ergebnis: Platz %d (%s)" % [s.my_position, s.my_league_name],
+		goal_line,
 		"",
 		"Absteiger: %s" % ", ".join(s.relegated),
 		"Aufsteiger: %s" % ", ".join(s.promoted),

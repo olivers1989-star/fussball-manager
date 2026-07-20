@@ -38,6 +38,9 @@ var game_mode := "vereinsauswahl"   # "angebote" (echte Karriere) | "vereinsausw
 var difficulty := "Normal"
 var reputation := 50.0         # Trainer-Ruf, bestimmt im Angebote-Modus die Jobangebote
 var training_focus := "Ausgewogen"
+var coach_salary := 20000      # Dein Trainergehalt pro Monat (in der Verhandlung ausgehandelt)
+var coach_contract_years := 2
+var season_goal := {}          # Saisonziel des Vorstands: {text, position}
 var my_club_id := -1
 var transactions: Array = []   # {text, amount, matchday, season}
 var initialized := false
@@ -62,9 +65,42 @@ func new_game(p_club_id: int) -> void:
 	my_club_id = p_club_id
 	reputation = float(my_club().base_strength)
 	training_focus = "Ausgewogen"
+	coach_salary = int(setup.get("coach_salary", board_salary(my_club().base_strength)))
+	coach_contract_years = int(setup.get("coach_years", 2))
+	season_goal = setup.get("season_goal", _board_goal_for(my_club()))
 	transactions.clear()
 	initialized = true
 	my_club().budget = int(my_club().budget * DIFFICULTY_FACTORS.get(difficulty, 1.0))
+
+# ------------------------------------------------------------------ Vorstand
+
+## Gehaltsangebot des Vorstands abhängig von der Vereinsgröße.
+static func board_salary(strength: int) -> int:
+	return maxi((strength - 40) * 3000, 15000)
+
+## Saisonziel abhängig von der Kaderstärke im Ligavergleich (rank = 1 ist der Stärkste).
+static func goal_from_rank(rank: int, tier: int) -> Dictionary:
+	if tier == 1:
+		if rank <= 2:
+			return {"text": "Meisterschaft", "position": 1}
+		if rank <= 5:
+			return {"text": "Top-5-Platzierung", "position": 5}
+		if rank <= 12:
+			return {"text": "Gesichertes Mittelfeld (Platz 12 oder besser)", "position": 12}
+		return {"text": "Klassenerhalt", "position": 15}
+	if rank <= 3:
+		return {"text": "Aufstieg (Platz 1–3)", "position": 3}
+	if rank <= 12:
+		return {"text": "Gesichertes Mittelfeld (Platz 12 oder besser)", "position": 12}
+	return {"text": "Klassenerhalt", "position": 15}
+
+func _board_goal_for(c: ClubData) -> Dictionary:
+	var lg: LeagueData = world.leagues[c.league_id]
+	var stronger := 0
+	for cid in lg.club_ids:
+		if world.clubs[cid].base_strength > c.base_strength:
+			stronger += 1
+	return goal_from_rank(stronger + 1, lg.tier)
 
 func manager_age() -> int:
 	return int(world.season_year) - int(manager_birthday.year)
@@ -221,10 +257,13 @@ func _apply_matchday_finances() -> void:
 		var salaries := c.salaries_per_matchday(world.players)
 		c.budget += ticket + c.sponsor_per_md - salaries
 		if cid == my_club_id:
+			var coach_cost := int(coach_salary * 12.0 / 34.0)
+			c.budget -= coach_cost
 			if ticket > 0:
 				log_transaction("Ticketeinnahmen (%s)" % c.stadium, ticket)
 			log_transaction("Sponsor: %s" % c.sponsor_name, c.sponsor_per_md)
 			log_transaction("Gehälter", -salaries)
+			log_transaction("Trainergehalt", -coach_cost)
 
 func log_transaction(text: String, amount: int) -> void:
 	transactions.push_front({
@@ -255,9 +294,24 @@ func end_season() -> Dictionary:
 		"my_league_name": my_league().name,
 	}
 
+	# Saisonziel auswerten: Erfolg stärkt den Ruf, Misserfolg kostet ihn
+	var goal_achieved: bool = int(summary.my_position) <= int(season_goal.get("position", 18))
+	summary["goal_text"] = season_goal.get("text", "")
+	summary["goal_achieved"] = goal_achieved
+	if goal_achieved:
+		reputation += 1.5
+	else:
+		reputation -= 1.0
+
 	# Trainer-Ruf aktualisieren: gute Platzierungen steigern die Reputation dauerhaft
 	var performance: float = my_club().base_strength + (10.0 - int(summary.my_position)) * 0.8
 	reputation = maxf(reputation, performance)
+
+	# Trainervertrag läuft weiter, der Vorstand setzt ein neues Saisonziel
+	coach_contract_years -= 1
+	if coach_contract_years <= 0:
+		coach_contract_years = 2
+	season_goal = _board_goal_for(my_club())
 
 	# Auf- und Abstieg (3 runter, 3 rauf)
 	for row in t1.slice(15):
@@ -411,6 +465,9 @@ func save_game() -> String:
 			"difficulty": difficulty,
 			"reputation": reputation,
 			"training_focus": training_focus,
+			"coach_salary": coach_salary,
+			"coach_years": coach_contract_years,
+			"season_goal": season_goal,
 			"my_club_id": my_club_id,
 			"club": my_club().name,
 			"season_year": world.season_year,
@@ -464,7 +521,12 @@ func load_game(path: String) -> bool:
 	difficulty = data.meta.get("difficulty", "Normal")
 	reputation = float(data.meta.get("reputation", 50.0))
 	training_focus = data.meta.get("training_focus", "Ausgewogen")
+	coach_salary = int(data.meta.get("coach_salary", 20000))
+	coach_contract_years = int(data.meta.get("coach_years", 2))
+	season_goal = data.meta.get("season_goal", {})
 	my_club_id = int(data.meta.my_club_id)
+	if season_goal.is_empty():
+		season_goal = {"text": "Klassenerhalt", "position": 15}
 	transactions = data.get("transactions", [])
 	world = _world_from_dict(data.world)
 	initialized = true
