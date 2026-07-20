@@ -46,6 +46,7 @@ var coach_money := 0           # Dein persönliches Trainerkonto (Gehalt + Präm
 var season_goal := {}          # Saisonziel des Vorstands: {text, position}
 var my_club_id := -1
 var transactions: Array = []   # {text, amount, matchday, season}
+var news: Array = []           # Tagesereignisse: {day, text, kind}, neueste zuerst
 var initialized := false
 
 # Zwischenspeicher des Spielstart-Assistenten (Trainer anlegen -> Spielmodus -> Verein/Angebot)
@@ -75,6 +76,7 @@ func new_game(p_club_id: int) -> void:
 	coach_money = 0
 	season_goal = setup.get("season_goal", _board_goal_for(my_club()))
 	transactions.clear()
+	news.clear()
 	initialized = true
 	my_club().budget = int(my_club().budget * DIFFICULTY_FACTORS.get(difficulty, 1.0))
 	# Ausgehandelte Transferbudget-Zusage des Vorstands
@@ -190,17 +192,80 @@ func is_matchday_today() -> bool:
 	return not season_over() and date_unix() >= matchday_date(matchday())
 
 ## Einen Tag weiterschalten (nicht über den anstehenden Spieltag hinaus).
-func advance_day() -> void:
+## Rückgabe: die Ereignisse dieses Tages.
+func advance_day() -> Array:
 	if season_over() or is_matchday_today():
-		return
+		return []
 	world.date = date_unix() + DAY
 	_daily_recovery()
+	return _daily_events()
 
-## Tage bis zum nächsten Spieltag durchlaufen lassen.
-func advance_to_matchday() -> void:
+## Tage bis zum nächsten Spieltag durchlaufen lassen. Rückgabe: alle Ereignisse.
+func advance_to_matchday() -> Array:
+	var collected: Array = []
 	while not season_over() and not is_matchday_today():
 		world.date = date_unix() + DAY
 		_daily_recovery()
+		collected.append_array(_daily_events())
+	return collected
+
+func _add_news(kind: String, text: String) -> Dictionary:
+	var entry := {"day": date_label(), "text": text, "kind": kind}
+	news.push_front(entry)
+	if news.size() > 60:
+		news.resize(60)
+	return entry
+
+## Was passiert heute rund um deinen Verein? (Training, Sponsor, Presse ...)
+func _daily_events() -> Array:
+	var events: Array = []
+	var c := my_club()
+	var squad := c.players(world.players)
+
+	# Trainingsverletzung (selten, aber bitter)
+	if randf() < 0.02:
+		var fit := squad.filter(func(p): return p.is_available())
+		if not fit.is_empty():
+			var p: PlayerData = fit.pick_random()
+			p.injury_matchdays = randi_range(1, 2)
+			events.append(_add_news("injury", "%s verletzt sich im Training und fällt %d Spieltag%s aus." % [
+				p.full_name(), p.injury_matchdays, "" if p.injury_matchdays == 1 else "e"]))
+
+	# Trainingsheld: Formschub für einen Spieler
+	var excel_chance := 0.10 if training_focus == "Leistung" else 0.06
+	if randf() < excel_chance and not squad.is_empty():
+		var p: PlayerData = squad.pick_random()
+		p.form = clampf(p.form + 0.02, 0.8, 1.2)
+		events.append(_add_news("training", "%s überzeugt im Training – seine Form steigt." % p.full_name()))
+
+	# Sponsor-Sonderzahlung
+	if randf() < 0.025:
+		var bonus := randi_range(2, 8) * 10000
+		c.budget += bonus
+		log_transaction("Sonderzahlung Sponsor", bonus)
+		events.append(_add_news("sponsor", "Sponsor %s überweist eine Sonderzahlung von %s." % [c.sponsor_name, Fmt.money(bonus)]))
+
+	# Transfergerücht um einen deiner Spieler
+	if randf() < 0.04 and not squad.is_empty():
+		var p: PlayerData = squad.pick_random()
+		var other_ids: Array = world.clubs.keys().filter(func(cid): return cid != my_club_id)
+		var other: ClubData = world.clubs[other_ids.pick_random()]
+		events.append(_add_news("gerücht", "Medienbericht: %s soll Interesse an %s zeigen." % [other.name, p.full_name()]))
+
+	# Vereinsleben & Presse
+	if randf() < 0.09:
+		var flavor := [
+			"Die Fans diskutieren hitzig über die Aufstellung fürs nächste Spiel.",
+			"%s betont in der Presse das Saisonziel: „%s“." % [c.chairman, season_goal.get("text", "?")],
+			"Die Lokalpresse lobt die Arbeit des Trainerteams.",
+			"Beim heutigen Training schauten Scouts anderer Vereine zu.",
+			"Der Zeugwart meldet Vollzug: Alle Trikots sind frisch gewaschen.",
+			"Ein Fanclub überreicht der Mannschaft selbstgebackenen Kuchen.",
+			"Der Platzwart kämpft mit dem Rasen – Training auf dem Nebenplatz.",
+		]
+		events.append(_add_news("presse", flavor.pick_random()))
+
+	return events
 
 ## Tägliche Erholung und Trainingseffekte. Die Fähigkeit "Training" und der
 ## Wochenschwerpunkt wirken auf den eigenen Verein.
@@ -281,8 +346,12 @@ func _heal_and_suspend_tick() -> void:
 		var p: PlayerData = world.players[pid]
 		if p.injury_matchdays > 0:
 			p.injury_matchdays -= 1
+			if p.injury_matchdays == 0 and p.club_id == my_club_id:
+				_add_news("fit", "%s ist wieder fit und steigt ins Mannschaftstraining ein." % p.full_name())
 		if p.suspended_matchdays > 0:
 			p.suspended_matchdays -= 1
+			if p.suspended_matchdays == 0 and p.club_id == my_club_id:
+				_add_news("fit", "%s hat seine Sperre abgesessen und ist wieder spielberechtigt." % p.full_name())
 
 ## Komplettsimulation ohne Eingriffe (Tests, Schnellrechnung).
 ## Springt vorher per Tagessimulation zum Spieltagstermin.
@@ -570,6 +639,7 @@ func save_game() -> String:
 		},
 		"world": _world_to_dict(),
 		"transactions": transactions,
+		"news": news,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
@@ -625,6 +695,7 @@ func load_game(path: String) -> bool:
 	if season_goal.is_empty():
 		season_goal = {"text": "Klassenerhalt", "position": 15}
 	transactions = data.get("transactions", [])
+	news = data.get("news", [])
 	world = _world_from_dict(data.world)
 	initialized = true
 	return true

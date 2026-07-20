@@ -20,10 +20,12 @@ func _ready() -> void:
 	assert(world.clubs.size() == 36)
 	assert(Game.league(1).fixtures.size() == 306)
 
-	# Kalender: Saison startet am 1. August, Spieltage samstags
+	# Kalender: Saison startet am 1. August, Spieltage samstags, Winterpause vorhanden
 	assert(Game.date_dict().month == 8 and Game.date_dict().day == 1)
 	assert(Game.world.matchday_dates.size() == 34)
 	assert(Time.get_datetime_dict_from_unix_time(Game.matchday_date(0)).weekday == Time.WEEKDAY_SATURDAY)
+	assert(Game.matchday_date(17) - Game.matchday_date(16) > 30 * 86400)
+	assert(Time.get_datetime_dict_from_unix_time(Game.matchday_date(17)).month == 2)
 	Game.advance_day()
 	assert(Game.date_dict().day == 2)
 
@@ -54,10 +56,11 @@ func _ready() -> void:
 			rated += 1
 		if pl.yellow_cards >= 5:
 			five_yellows += 1
-	print("Aktuell Verletzte: %d, Spieler mit Note: %d, Spieler mit 5+ Gelben: %d" % [injured, rated, five_yellows])
+	print("Aktuell Verletzte: %d, Spieler mit Note: %d, Spieler mit 5+ Gelben: %d, Meldungen: %d" % [injured, rated, five_yellows, Game.news.size()])
 	assert(rated > 300)
 	assert(injured > 0)
 	assert(five_yellows > 0)
+	assert(Game.news.size() > 0)
 
 	var table := Game.league(1).table()
 	print("Meister: %s (%d Punkte)" % [Game.club(table[0].club_id).name, table[0].points])

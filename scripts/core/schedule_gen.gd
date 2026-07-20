@@ -42,13 +42,21 @@ static func season_start(year: int) -> int:
 	return int(Time.get_unix_time_from_datetime_dict({
 		"year": year, "month": 8, "day": 1, "hour": 12, "minute": 0, "second": 0}))
 
-## Alle 34 Spieltagstermine einer Saison: wöchentlich samstags.
-## Der erste Spieltag liegt mindestens eine Vorbereitungswoche nach Saisonstart.
+## Alle 34 Spieltagstermine einer Saison: wöchentlich samstags, mit WINTERPAUSE.
+## Hinrunde (17 Spieltage) ab Mitte August, Rückrunde ab dem ersten Samstag im Februar.
 static func matchday_dates(year: int) -> Array:
+	var dates: Array = []
+	# Hinrunde: mindestens eine Vorbereitungswoche nach Saisonstart
 	var t := season_start(year) + 6 * 86400
 	while Time.get_datetime_dict_from_unix_time(t).weekday != Time.WEEKDAY_SATURDAY:
 		t += 86400
-	var dates: Array = []
-	for i in 34:
+	for i in 17:
 		dates.append(t + i * 7 * 86400)
+	# Rückrunde: erster Samstag im Februar des Folgejahres
+	var rt := int(Time.get_unix_time_from_datetime_dict({
+		"year": year + 1, "month": 2, "day": 1, "hour": 12, "minute": 0, "second": 0}))
+	while Time.get_datetime_dict_from_unix_time(rt).weekday != Time.WEEKDAY_SATURDAY:
+		rt += 86400
+	for i in 17:
+		dates.append(rt + i * 7 * 86400)
 	return dates

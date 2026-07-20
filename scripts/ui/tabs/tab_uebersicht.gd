@@ -5,6 +5,7 @@ extends TabBase
 var _welcome: Label
 var _next_match: Label
 var _position: Label
+var _news: ItemList
 var _results: ItemList
 var _scorers: ItemList
 
@@ -29,6 +30,16 @@ func _init() -> void:
 	columns.add_theme_constant_override("separation", 24)
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(columns)
+
+	var news_box := VBoxContainer.new()
+	news_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	news_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	news_box.size_flags_stretch_ratio = 1.4
+	columns.add_child(news_box)
+	news_box.add_child(heading("Aktuelles"))
+	_news = ItemList.new()
+	_news.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	news_box.add_child(_news)
 
 	var left := VBoxContainer.new()
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -68,6 +79,14 @@ func refresh() -> void:
 	_position.text = "Tabellenplatz: %d.  ·  %s  ·  Spieltag %d/34  ·  Saisonziel: %s" % [
 		Game.my_league().position_of(c.id), Game.season_label(), Game.matchday(),
 		Game.season_goal.get("text", "–")]
+
+	_news.clear()
+	if Game.news.is_empty():
+		_news.add_item("Noch keine Meldungen – lass die Tage laufen!")
+		_news.set_item_disabled(0, true)
+	for i in mini(20, Game.news.size()):
+		var e: Dictionary = Game.news[i]
+		_news.add_item("%s – %s" % [e.day, e.text])
 
 	_results.clear()
 	var played := Game.my_league().fixtures_of_club(c.id).filter(func(x): return x.played)

@@ -23,6 +23,8 @@ var _season_dialog: AcceptDialog
 var _offers_dialog: ConfirmationDialog
 var _offers_list: ItemList
 var _pending_offers: Array = []
+var _report_dialog: AcceptDialog
+var _report_list: ItemList
 
 func _ready() -> void:
 	if not Game.initialized:
@@ -205,6 +207,15 @@ func _build_ui() -> void:
 	_offers_dialog.confirmed.connect(_on_offer_accepted)
 	add_child(_offers_dialog)
 
+	_report_dialog = AcceptDialog.new()
+	_report_dialog.title = "Tagesbericht"
+	_report_dialog.ok_button_text = "Alles klar"
+	_report_dialog.min_size = Vector2i(760, 340)
+	_report_list = ItemList.new()
+	_report_list.custom_minimum_size = Vector2(720, 260)
+	_report_dialog.add_child(_report_list)
+	add_child(_report_dialog)
+
 func _stat_box(caption: String, kind: String) -> VBoxContainer:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 0)
@@ -295,9 +306,10 @@ func _on_save() -> void:
 			_toast.text = "")
 
 func _on_next_day() -> void:
-	Game.advance_day()
+	var events := Game.advance_day()
 	update_topbar()
 	_refresh_active_screen()
+	_show_day_report(events, "Tagesbericht – %s" % Game.date_label())
 
 func _on_play_pressed() -> void:
 	if Game.season_over():
@@ -306,9 +318,20 @@ func _on_play_pressed() -> void:
 	if Game.is_matchday_today():
 		get_tree().change_scene_to_file("res://scenes/match.tscn")
 		return
-	Game.advance_to_matchday()
+	var events := Game.advance_to_matchday()
 	update_topbar()
 	_refresh_active_screen()
+	_show_day_report(events, "Bericht bis zum Spieltag")
+
+func _show_day_report(events: Array, title: String) -> void:
+	if events.is_empty():
+		return
+	_report_dialog.title = title
+	_report_list.clear()
+	for i in mini(events.size(), 20):
+		var e: Dictionary = events[i]
+		_report_list.add_item("%s  –  %s" % [e.day, e.text])
+	_report_dialog.popup_centered()
 
 func _on_season_dialog_confirmed() -> void:
 	update_topbar()
