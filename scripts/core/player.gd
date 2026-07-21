@@ -193,6 +193,29 @@ static func make_attributes(p_pos: String, target: int) -> Dictionary:
 func combo(key_a: String, key_b: String, weight_a := 0.6) -> float:
 	return attr(key_a) * weight_a + attr(key_b) * (1.0 - weight_a)
 
+## Vertrautheit mit einer Position: volle Leistung nur auf der eigenen Position,
+## innerhalb der Positionsgruppe kleiner Abzug, gruppenfremd deutlicher Abzug
+## (fremde Laufwege, fehlendes Stellungsgefühl).
+func position_familiarity(p_pos: String) -> float:
+	if p_pos == pos:
+		return 1.0
+	if p_pos == "TW" or pos == "TW":
+		return 0.5   # Feldspieler im Tor (oder Torwart im Feld) ist ein Notnagel
+	return 0.95 if GROUP_OF[p_pos] == group() else 0.75
+
+## Stärke des Spielers auf einer (auch fremden) Position: bewertet die Attribute
+## mit den Gewichten dieser Position, abzüglich der Positionsvertrautheit.
+## Ein Stürmer im Abwehr-Slot ist entsprechend schwach – die Grundlage des
+## slot-basierten Aufstellungssystems (Engine rechnet identisch).
+func strength_at(p_pos: String) -> int:
+	if p_pos == pos:
+		return strength
+	var weights: Dictionary = STRENGTH_WEIGHTS[p_pos]
+	var total := 0.0
+	for key in weights:
+		total += attr(key) * weights[key]
+	return clampi(int(round(total * position_familiarity(p_pos))), 1, 99)
+
 ## Berechnet die Gesamtstärke aus den Attributen (positionsabhängig gewichtet).
 func recompute_strength() -> void:
 	var weights: Dictionary = STRENGTH_WEIGHTS[pos]

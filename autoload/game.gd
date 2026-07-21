@@ -893,6 +893,10 @@ func load_game(path: String) -> bool:
 	world = _world_from_dict(data.world)
 	if not data.world.has("retired"):
 		_migrate_economy_v012()
+	# Startaufstellungen slot-treu ausrichten (Spielstände vor dem Slot-System
+	# haben eine ungeordnete Elf – die Engine bewertet seitdem pro Formations-Slot)
+	for cid in world.clubs:
+		world.clubs[cid].align_lineup(world.players)
 	initialized = true
 	return true
 

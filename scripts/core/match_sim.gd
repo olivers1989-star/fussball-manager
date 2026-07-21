@@ -28,6 +28,8 @@ var finished := false
 
 var lineup_h: Array = []
 var lineup_a: Array = []
+var slots_h: Array = []     # Formations-Slot je Aufstellungsindex: der Spieler
+var slots_a: Array = []     # WIRD auf diesem Slot bewertet (slot-basiertes System)
 var mentality_h := "ausgewogen"
 var mentality_a := "ausgewogen"
 var factor_h := 1.0         # externe Boni (z. B. Trainer-Fähigkeit "Taktik")
@@ -57,6 +59,8 @@ func setup(p_home: ClubData, p_away: ClubData, p_players: Dictionary) -> void:
 	_rng.randomize()
 	lineup_h = home.match_lineup(players).duplicate()
 	lineup_a = away.match_lineup(players).duplicate()
+	slots_h = _slots_for(home, lineup_h)
+	slots_a = _slots_for(away, lineup_a)
 	# Frische übernehmen und Tagesform auswürfeln – jeder Spieler hat gute und schlechte Tage
 	for pid in home.player_ids + away.player_ids:
 		cond[pid] = players[pid].condition
@@ -78,8 +82,8 @@ func tick() -> void:
 	_drain_condition()
 	_maybe_injury()
 
-	var rat_h := _ratings(lineup_h, mentality_h, factor_h * red_h, hg < ag, plan_h)
-	var rat_a := _ratings(lineup_a, mentality_a, factor_a * red_a, ag < hg, plan_a)
+	var rat_h := _ratings(lineup_h, slots_h, mentality_h, factor_h * red_h, hg < ag, plan_h)
+	var rat_a := _ratings(lineup_a, slots_a, mentality_a, factor_a * red_a, ag < hg, plan_a)
 
 	var mid_sum: float = rat_h.mid + rat_a.mid
 	var p_home: float = CHANCE_BASE * (2.0 * rat_h.mid / mid_sum) * HOME_BONUS
@@ -114,6 +118,25 @@ func tick() -> void:
 func run_full() -> void:
 	while not finished:
 		tick()
+
+## Formations-Slots passend zur Aufstellung; Fallback auf die eigene Position,
+## falls Aufstellung und Formation nicht zusammenpassen (z. B. Rumpfkader).
+func _slots_for(club: ClubData, lineup: Array) -> Array:
+	var slots: Array = ClubData.FORMATIONS.get(club.formation, ClubData.FORMATIONS["4-4-2"]).duplicate()
+	if slots.size() != lineup.size():
+		slots.clear()
+		for pid in lineup:
+			slots.append(players[pid].pos)
+	return slots
+
+## Der Slot, auf dem ein Spieler gerade spielt (Bewertungsgrundlage).
+func _slot_of(pid: int, is_home: bool) -> String:
+	var lineup: Array = lineup_h if is_home else lineup_a
+	var idx := lineup.find(pid)
+	if idx < 0:
+		return players[pid].pos
+	var slots: Array = slots_h if is_home else slots_a
+	return slots[idx] if idx < slots.size() else players[pid].pos
 
 # ------------------------------------------------------------------ Eingriffe
 
@@ -207,7 +230,7 @@ func _chance(for_home: bool, own: Dictionary, opp: Dictionary) -> void:
 	var club: ClubData = home if for_home else away
 	# Flankenangriffe: je besser die Außenbahnen, desto häufiger
 	if _rng.randf() < clampf(0.12 + own.wide / 400.0, 0.12, 0.4):
-		var header := _pick_scorer(lineup, "kopfball")
+		var header := _pick_scorer(lineup, "kopfball", for_home)
 		var denom: float = opp.def * 0.75 + opp.box * 0.25
 		var conversion := clampf(0.24 * pow(own.header / denom, 1.3), 0.05, 0.55)
 		if _rng.randf() < conversion:
@@ -215,7 +238,7 @@ func _chance(for_home: bool, own: Dictionary, opp: Dictionary) -> void:
 		elif _rng.randf() < 0.4:
 			_emit("chance", "Flanke auf %s – sein Kopfball geht knapp vorbei!" % header.full_name())
 		return
-	var scorer := _pick_scorer(lineup, "normal")
+	var scorer := _pick_scorer(lineup, "normal", for_home)
 	# Die Abschlussstärke des Schützen entscheidet mit (Knipser-Faktor)
 	var conversion := clampf(0.30 * pow(own.att / opp.def, 1.4) * (0.7 + scorer.attr("abschluss") / 200.0), 0.05, 0.7)
 	# Nervenstärke zählt in der Schlussphase
@@ -240,7 +263,7 @@ func _set_piece(for_home: bool, own: Dictionary, opp: Dictionary) -> void:
 			_emit("chance", "Freistoß %s: %s fordert den Torwart mit einem strammen Schuss." % [club.short_name, taker.full_name()])
 	else:
 		# Ecke → Kopfballchance
-		var header := _pick_scorer(lineup, "kopfball")
+		var header := _pick_scorer(lineup, "kopfball", for_home)
 		var denom: float = opp.def * 0.7 + opp.box * 0.3
 		var conversion := clampf(0.16 * pow(own.header / denom, 1.2), 0.04, 0.4)
 		if _rng.randf() < conversion:
@@ -354,7 +377,11 @@ func _maybe_card_side(card_home: bool) -> void:
 		p.suspended_matchdays += 2
 		_note_adj[p.id] = _note_adj.get(p.id, 0.0) + 1.2
 		_emit("red", "ROTE KARTE! %s (%s) muss vom Platz und ist für 2 Spieltage gesperrt!" % [p.full_name(), club.short_name])
-		lineup.erase(p.id)
+		var ridx := lineup.find(p.id)
+		lineup.remove_at(ridx)
+		var rslots: Array = slots_h if card_home else slots_a
+		if ridx < rslots.size():
+			rslots.remove_at(ridx)
 		off.append(p.id)
 		if card_home:
 			red_h *= 0.86
@@ -371,7 +398,8 @@ func _maybe_card_side(card_home: bool) -> void:
 
 ## Torschützen-Auswahl: bei normalen Angriffen zählt der Abschluss (Knipser-Effekt),
 ## bei Flanken und Ecken Kopfball × Sprungkraft (dann köpfen auch Innenverteidiger).
-func _pick_scorer(lineup: Array, mode: String) -> PlayerData:
+## Gewichtet nach dem SLOT, auf dem der Spieler gerade spielt.
+func _pick_scorer(lineup: Array, mode: String, is_home: bool) -> PlayerData:
 	var group_weights: Dictionary
 	if mode == "kopfball":
 		group_weights = {"TW": 0.01, "AB": 2.0, "MF": 1.5, "ST": 5.0}
@@ -382,7 +410,7 @@ func _pick_scorer(lineup: Array, mode: String) -> PlayerData:
 	for pid in lineup:
 		var p: PlayerData = players[pid]
 		var value: float = p.combo("kopfball", "sprung") if mode == "kopfball" else float(p.attr("abschluss"))
-		var w: float = group_weights[p.group()] * (value / 60.0)
+		var w: float = group_weights[PlayerData.GROUP_OF[_slot_of(pid, is_home)]] * (value / 60.0)
 		total += w
 		pool.append([p, w])
 	var roll := _rng.randf() * total
@@ -413,7 +441,7 @@ const WIDE_POS := ["LV", "RV", "LM", "RM", "LA", "RA"]
 ## - Außenbahnen: Flanken speisen Flankenangriffe (wide/header)
 ## - Team: Führungsqualität (Kapitänseffekt), Entschlossenheit (Aufholjagd),
 ##   Konzentration (Schlussphase der Abwehr)
-func _ratings(lineup: Array, mentality: String, factor: float, trailing: bool, plan: Dictionary = {}) -> Dictionary:
+func _ratings(lineup: Array, slots: Array, mentality: String, factor: float, trailing: bool, plan: Dictionary = {}) -> Dictionary:
 	var gk := 0.0
 	var gk_box := 45.0
 	var gk_reflex := 45.0
@@ -433,33 +461,39 @@ func _ratings(lineup: Array, mentality: String, factor: float, trailing: bool, p
 	var best_leader := 0.0
 	var ent_sum := 0.0
 	var konz_sum := 0.0
-	for pid in lineup:
+	for i in lineup.size():
+		var pid: int = lineup[i]
 		var p: PlayerData = players[pid]
+		# Bewertet wird der Spieler auf seinem FORMATIONS-SLOT: Ein Stürmer im
+		# Abwehr-Slot verteidigt mit seinen (schwachen) Defensiv-Attributen und
+		# zusätzlichem Vertrautheits-Abzug (fremde Laufwege).
+		var slot: String = slots[i] if i < slots.size() else p.pos
+		var fam := p.position_familiarity(slot)
 		best_leader = maxf(best_leader, float(p.attr("fuehrung")))
 		ent_sum += p.attr("entschlossenheit")
 		konz_sum += p.attr("konzentration")
-		if p.pos in WIDE_POS:
-			wide += _attr_val(pid, "flanken")
+		if slot in WIDE_POS:
+			wide += _attr_val(pid, "flanken") * fam
 			wide_n += 1
-		match p.group():
+		match PlayerData.GROUP_OF[slot]:
 			"TW":
-				gk += _attr_val(pid, "reflexe") * 0.55 + _attr_val(pid, "strafraum") * 0.25 + _attr_val(pid, "beweglichkeit") * 0.2
-				gk_box = _attr_val(pid, "strafraum")
-				gk_reflex = _attr_val(pid, "reflexe")
+				gk += (_attr_val(pid, "reflexe") * 0.55 + _attr_val(pid, "strafraum") * 0.25 + _attr_val(pid, "beweglichkeit") * 0.2) * fam
+				gk_box = _attr_val(pid, "strafraum") * fam
+				gk_reflex = _attr_val(pid, "reflexe") * fam
 				gk_n += 1
 			"AB":
-				defense += _attr_val(pid, "zweikampf") * 0.3 + _attr_val(pid, "stellung") * 0.25 + _attr_val(pid, "kraft") * 0.1 + _attr_val(pid, "kopfball") * 0.15 + _attr_val(pid, "konzentration") * 0.2
+				defense += (_attr_val(pid, "zweikampf") * 0.3 + _attr_val(pid, "stellung") * 0.25 + _attr_val(pid, "kraft") * 0.1 + _attr_val(pid, "kopfball") * 0.15 + _attr_val(pid, "konzentration") * 0.2) * fam
 				def_n += 1
 				header += _attr_val(pid, "kopfball") * 0.6 + _attr_val(pid, "sprung") * 0.4
 				header_n += 1
 			"MF":
-				mid += _attr_val(pid, "passen") * 0.3 + _attr_val(pid, "uebersicht") * 0.25 + _attr_val(pid, "technik") * 0.2 + _attr_val(pid, "einsatz") * 0.25
-				mid_def += _attr_val(pid, "zweikampf") * 0.45 + _attr_val(pid, "einsatz") * 0.25 + _attr_val(pid, "aggressivitaet") * 0.1 + _attr_val(pid, "stellung") * 0.2
-				mf_att += _attr_val(pid, "passen") * 0.35 + _attr_val(pid, "uebersicht") * 0.35 + _attr_val(pid, "technik") * 0.3
+				mid += (_attr_val(pid, "passen") * 0.3 + _attr_val(pid, "uebersicht") * 0.25 + _attr_val(pid, "technik") * 0.2 + _attr_val(pid, "einsatz") * 0.25) * fam
+				mid_def += (_attr_val(pid, "zweikampf") * 0.45 + _attr_val(pid, "einsatz") * 0.25 + _attr_val(pid, "aggressivitaet") * 0.1 + _attr_val(pid, "stellung") * 0.2) * fam
+				mf_att += (_attr_val(pid, "passen") * 0.35 + _attr_val(pid, "uebersicht") * 0.35 + _attr_val(pid, "technik") * 0.3) * fam
 				mid_n += 1
 			"ST":
 				var dribble: float = _attr_val(pid, "dribbling") * 0.7 + _attr_val(pid, "beweglichkeit") * 0.3
-				attack += _attr_val(pid, "abschluss") * 0.3 + _attr_val(pid, "tempo") * 0.2 + dribble * 0.25 + _attr_val(pid, "technik") * 0.15 + _attr_val(pid, "nerven") * 0.1
+				attack += (_attr_val(pid, "abschluss") * 0.3 + _attr_val(pid, "tempo") * 0.2 + dribble * 0.25 + _attr_val(pid, "technik") * 0.15 + _attr_val(pid, "nerven") * 0.1) * fam
 				att_n += 1
 				header += _attr_val(pid, "kopfball") * 0.6 + _attr_val(pid, "sprung") * 0.4
 				header_n += 1
@@ -536,9 +570,10 @@ func _maybe_injury() -> void:
 		return
 	p.injury_matchdays = _rng.randi_range(1, 5)
 	_emit("injury", "%s (%s) verletzt sich und kann nicht weiterspielen! (Pause: %d Spieltage)" % [p.full_name(), club.short_name, p.injury_matchdays])
-	lineup.erase(injured_pid)
+	var idx := lineup.find(injured_pid)
 	off.append(injured_pid)
-	# Zwangswechsel: bester fitter Ersatz, bevorzugt gleiche Positionsgruppe
+	# Zwangswechsel: bester fitter Ersatz, bevorzugt gleiche Positionsgruppe –
+	# der Ersatzmann übernimmt den Formations-Slot des Verletzten
 	if (subs_h if is_home else subs_a) < MAX_SUBS:
 		var candidates := bench(is_home)
 		var same_group := candidates.filter(func(pid): return players[pid].group() == p.group())
@@ -546,7 +581,7 @@ func _maybe_injury() -> void:
 		if not pool.is_empty():
 			pool.sort_custom(func(a, b): return _player_effective(a) > _player_effective(b))
 			var pid_in: int = pool[0]
-			lineup.append(pid_in)
+			lineup[idx] = pid_in
 			_appeared[pid_in] = true
 			if is_home:
 				subs_h += 1
@@ -554,7 +589,11 @@ func _maybe_injury() -> void:
 				subs_a += 1
 			_emit("sub", "Verletzungsbedingter Wechsel bei %s: %s kommt für %s." % [club.short_name, players[pid_in].full_name(), p.full_name()])
 			return
-	# Kein Wechsel mehr möglich: in Unterzahl weiter
+	# Kein Wechsel mehr möglich: in Unterzahl weiter (Slot fällt mit weg)
+	lineup.remove_at(idx)
+	var slots: Array = slots_h if is_home else slots_a
+	if idx < slots.size():
+		slots.remove_at(idx)
 	if is_home:
 		red_h *= 0.88
 	else:

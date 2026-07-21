@@ -54,37 +54,45 @@ func players_by_group(all_players: Dictionary, p_group: String) -> Array:
 	result.sort_custom(func(a, b): return a.rating() > b.rating())
 	return result
 
-## Stellt die beste fitte Elf für die Formations-Slots zusammen:
-## erst exakte Position, dann gleiche Positionsgruppe, zuletzt beste Restspieler.
+## Stellt die beste fitte Elf für die Formations-Slots zusammen – SLOT-TREU:
+## lineup[i] gehört zu FORMATIONS[formation][i]. Erst exakte Position,
+## dann gleiche Positionsgruppe, zuletzt beste Restspieler.
 func best_eleven(all_players: Dictionary, p_formation: String = "") -> Array:
 	var slots: Array = FORMATIONS[p_formation if p_formation != "" else formation]
 	var available := players(all_players).filter(func(p): return p.is_available())
-	available.sort_custom(func(a, b): return a.effective_rating() > b.effective_rating())
+	return _fill_slots(slots, available)
+
+## Ordnet einen Spieler-Pool den Slots zu (3 Durchgänge), Ergebnis slot-treu.
+func _fill_slots(slots: Array, pool: Array) -> Array:
+	var sorted := pool.duplicate()
+	sorted.sort_custom(func(a, b): return a.effective_rating() > b.effective_rating())
 	var eleven: Array = []
+	eleven.resize(slots.size())
+	eleven.fill(-1)
 	var used := {}
-	var open_slots: Array = []
 	# 1. Durchgang: exakte Position
-	for slot in slots:
-		var picked := _pick_for_slot(available, used, func(p): return p.pos == slot)
-		if picked > 0:
-			eleven.append(picked)
-		else:
-			open_slots.append(slot)
+	for i in slots.size():
+		eleven[i] = _pick_for_slot(sorted, used, func(p): return p.pos == slots[i])
 	# 2. Durchgang: gleiche Positionsgruppe
-	var still_open: Array = []
-	for slot in open_slots:
-		var group: String = PlayerData.GROUP_OF[slot]
-		var picked := _pick_for_slot(available, used, func(p): return p.group() == group)
-		if picked > 0:
-			eleven.append(picked)
-		else:
-			still_open.append(slot)
+	for i in slots.size():
+		if eleven[i] < 0:
+			eleven[i] = _pick_for_slot(sorted, used, func(p): return p.group() == PlayerData.GROUP_OF[slots[i]])
 	# 3. Durchgang: beste Restspieler
-	for slot in still_open:
-		var picked := _pick_for_slot(available, used, func(_p): return true)
-		if picked > 0:
-			eleven.append(picked)
-	return eleven
+	for i in slots.size():
+		if eleven[i] < 0:
+			eleven[i] = _pick_for_slot(sorted, used, func(_p): return true)
+	return eleven.filter(func(pid): return pid > 0)
+
+## Sortiert eine vorhandene Startelf slot-treu um (z. B. nach dem Laden alter
+## Spielstände oder einem Formationswechsel mit denselben Spielern).
+func align_lineup(all_players: Dictionary) -> void:
+	if lineup.size() != FORMATIONS[formation].size():
+		return
+	var pool: Array = []
+	for pid in lineup:
+		if all_players.has(pid):
+			pool.append(all_players[pid])
+	lineup = _fill_slots(FORMATIONS[formation], pool)
 
 func _pick_for_slot(available: Array, used: Dictionary, predicate: Callable) -> int:
 	for p in available:
