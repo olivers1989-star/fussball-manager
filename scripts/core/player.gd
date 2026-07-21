@@ -97,6 +97,41 @@ static func _offset_for(p_pos: String, key: String) -> int:
 		return -30
 	return int(ATTR_OFFSETS[p_pos].get(key, -2))
 
+## Spielereigenschaften: genau 20, JEDE mit echter Auswirkung in der Engine
+## (siehe match_sim.gd bzw. game.gd). Ein Spieler hat 0–2 Eigenschaften.
+const TRAITS := {
+	"Trainingsweltmeister": "Entwickelt sich im Training deutlich schneller",
+	"Trainingsmuffel": "Entwickelt sich im Training spürbar langsamer",
+	"Joker": "Bringt nach Einwechslungen einen Leistungsschub",
+	"Dauerbrenner": "Verliert im Spiel deutlich langsamer Frische",
+	"Verletzungsanfällig": "Erhöhtes Verletzungsrisiko",
+	"Eisenmann": "Sehr geringes Verletzungsrisiko",
+	"Elfmeterspezialist": "Tritt Elfmeter an und verwandelt eiskalt",
+	"Elfmeterkiller": "Hält als Torwart deutlich mehr Elfmeter",
+	"Freistoßspezialist": "Brandgefährlich bei direkten Freistößen",
+	"Kopfballungeheuer": "Stark bei Flanken und Ecken",
+	"Knipser": "Eiskalter Abschluss aus dem Spiel heraus",
+	"Spielmacher": "Lenkt und beschleunigt das Spiel im Mittelfeld",
+	"Führungsspieler": "Reißt die Mannschaft als Anführer mit",
+	"Eiskalt": "Besonders stark in der Schlussphase",
+	"Nervenbündel": "Wird in der Schlussphase nervös",
+	"Heimspielheld": "Stärker vor eigenem Publikum",
+	"Auswärtskämpfer": "Stärker in fremden Stadien",
+	"Spätzünder": "Kommt erst in Halbzeit zwei richtig ins Rollen",
+	"Fairplay": "Kassiert kaum Karten",
+	"Hitzkopf": "Neigt zu Karten und Platzverweisen",
+}
+
+## Eigenschaften, die sich gegenseitig ausschließen.
+const TRAIT_CONFLICTS := [
+	["Trainingsweltmeister", "Trainingsmuffel"],
+	["Verletzungsanfällig", "Eisenmann"],
+	["Eiskalt", "Nervenbündel"],
+	["Heimspielheld", "Auswärtskämpfer"],
+	["Fairplay", "Hitzkopf"],
+	["Elfmeterspezialist", "Nervenbündel"],
+]
+
 var id: int = 0
 var first_name: String = ""
 var last_name: String = ""
@@ -115,6 +150,35 @@ var last_rating: float = 0.0  # Note des letzten Einsatzes (1,0–6,0; 0 = noch 
 var contract_years: int = 2
 var salary: int = 10000       # Euro pro Monat
 var club_id: int = -1
+var nat: String = "Deutschland"  # Nationalität (später Basis für Nationalmannschaften)
+var traits: Array = []           # 0–2 Eigenschaften aus TRAITS
+
+func has_trait(t: String) -> bool:
+	return traits.has(t)
+
+## Würfelt 0–2 Eigenschaften (55 % keine, 33 % eine, 12 % zwei) unter Beachtung
+## der Konflikte; "Elfmeterkiller" gibt es nur für Torhüter.
+static func roll_traits(p_pos: String, rng: RandomNumberGenerator = null) -> Array:
+	var r := rng if rng != null else RandomNumberGenerator.new()
+	if rng == null:
+		r.randomize()
+	var roll := r.randf()
+	var count := 0 if roll < 0.55 else (1 if roll < 0.88 else 2)
+	var result: Array = []
+	var pool: Array = TRAITS.keys()
+	while result.size() < count and not pool.is_empty():
+		var pick: String = pool[r.randi_range(0, pool.size() - 1)]
+		pool.erase(pick)
+		if pick == "Elfmeterkiller" and GROUP_OF[p_pos] != "TW":
+			continue
+		var conflict := false
+		for pair in TRAIT_CONFLICTS:
+			if pick in pair and (result.has(pair[0]) or result.has(pair[1])):
+				conflict = true
+				break
+		if not conflict:
+			result.append(pick)
+	return result
 
 # Saisonstatistik
 var goals_season: int = 0
@@ -296,6 +360,7 @@ func to_dict() -> Dictionary:
 		"ms": matches_season, "rs": ratings_sum, "form": form, "sta": stamina, "cond": condition,
 		"inj": injury_matchdays, "sus": suspended_matchdays, "note": last_rating, "cy": contract_years, "sal": salary,
 		"club": club_id, "g": goals_season, "yc": yellow_cards, "rc": red_cards,
+		"nat": nat, "traits": traits,
 	}
 
 static func from_dict(d: Dictionary) -> PlayerData:
@@ -335,4 +400,16 @@ static func from_dict(d: Dictionary) -> PlayerData:
 	p.goals_season = int(d.get("g", 0))
 	p.yellow_cards = int(d.get("yc", 0))
 	p.red_cards = int(d.get("rc", 0))
+	# Alte Spielstände: Nationalität aus dem Namen ableiten, Eigenschaften würfeln
+	p.nat = str(d.get("nat", ""))
+	if p.nat == "":
+		p.nat = Nations.guess_for_name(p.first_name, p.last_name, p.id)
+	if d.has("traits"):
+		for t in d.traits:
+			if TRAITS.has(str(t)):
+				p.traits.append(str(t))
+	else:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash("%s%s%d" % [p.first_name, p.last_name, p.id])
+		p.traits = roll_traits(p.pos, rng)
 	return p

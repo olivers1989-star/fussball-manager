@@ -17,9 +17,9 @@ func _ready() -> void:
 	var tab = hub._screens["Aufstellung"]
 	var st: PlayerData = Game.my_club().players_by_pos(Game.world.players, "MS")[0]
 	if Game.my_club().lineup.has(st.id):
-		tab.swap_slots(Game.my_club().lineup.find(st.id), 1)
+		tab._swap_slots(Game.my_club().lineup.find(st.id), 1)
 	else:
-		tab.assign_bench(st.id, 1)
+		tab._roster_to_slot(st.id, 1)
 	await get_tree().create_timer(0.8).timeout
 	get_viewport().get_texture().get_image().save_png("user://aufstellung_warn_shot.png")
 	# Andere Formation testen (4-2-3-1)

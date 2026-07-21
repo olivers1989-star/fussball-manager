@@ -56,8 +56,8 @@ func _init() -> void:
 	grid.add_theme_constant_override("h_separation", 18)
 	grid.add_theme_constant_override("v_separation", 6)
 	left.add_child(grid)
-	for entry in [["age", "Alter"], ["strength", "Gesamtstärke"], ["talent", "Talent"], ["contract", "Vertrag"], ["salary", "Gehalt"],
-		["value", "Marktwert"], ["status", "Status"]]:
+	for entry in [["age", "Alter"], ["nat", "Nationalität"], ["strength", "Gesamtstärke"], ["talent", "Talent"], ["contract", "Vertrag"], ["salary", "Gehalt"],
+		["value", "Marktwert"], ["traits", "Eigenschaften"], ["status", "Status"]]:
 		var key := Label.new()
 		key.text = entry[1] + ":"
 		key.add_theme_color_override("font_color", UITheme.TEXT_DIM)
@@ -159,6 +159,17 @@ func open_for(pid: int) -> void:
 	_club_label.add_theme_color_override("font_color", Color(club.color))
 
 	_info.age.text = "%d Jahre" % p.age
+	_info.nat.text = p.nat
+	if p.traits.is_empty():
+		_info.traits.text = "–"
+		_info.traits.tooltip_text = ""
+	else:
+		_info.traits.text = ", ".join(p.traits)
+		var tips: Array = []
+		for t in p.traits:
+			tips.append("%s: %s" % [t, PlayerData.TRAITS.get(t, "")])
+		_info.traits.tooltip_text = "\n".join(tips)
+		_info.traits.add_theme_color_override("font_color", UITheme.ACCENT)
 	_info.strength.text = str(p.strength)
 	_info.talent.text = p.talent_stars()
 	_info.talent.add_theme_color_override("font_color", UITheme.WARN if p.talent >= 4 else UITheme.TEXT)

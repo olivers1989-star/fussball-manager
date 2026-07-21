@@ -381,10 +381,15 @@ func _daily_recovery() -> void:
 			regen += focus.regen
 			if training_focus == "Kondition" and p.stamina < 95 and randf() < 0.003:
 				p.stamina += 1
-			# Schwerpunkt-Training verbessert gezielt Attribute (Junge lernen schneller)
+			# Schwerpunkt-Training verbessert gezielt Attribute (Junge lernen schneller,
+			# Trainingsweltmeister sowieso, Trainingsmuffel kaum)
 			var pool: Array = focus.pool
 			if not pool.is_empty():
 				var age_scale := 1.0 if p.age <= 21 else (0.6 if p.age <= 26 else 0.25)
+				if p.has_trait("Trainingsweltmeister"):
+					age_scale *= 1.6
+				elif p.has_trait("Trainingsmuffel"):
+					age_scale *= 0.5
 				if randf() < float(focus.chance) * age_scale:
 					var key: String = pool.pick_random()
 					p.attributes[key] = clampi(p.attr(key) + 1, 3, 99)
@@ -715,6 +720,11 @@ func _season_development(p: PlayerData) -> float:
 			if p.matches_season >= 5:
 				delta *= clampf(1.0 + (3.2 - p.avg_rating()) * 0.25, 0.8, 1.3)
 		delta *= 1.0 + (p.attr("entschlossenheit") - 50.0) / 500.0
+		# Eigenschaften: Trainingsweltmeister entwickeln sich schneller, Muffel langsamer
+		if p.has_trait("Trainingsweltmeister"):
+			delta *= 1.25
+		elif p.has_trait("Trainingsmuffel"):
+			delta *= 0.75
 		if p.club_id == my_club_id and p.age <= 26 and TRAINING_FOCI.get(training_focus, {}).get("chance", 0.0) > 0.0:
 			delta += 0.4
 		# Potenzialbremse: nahe der eigenen Obergrenze wird die Luft dünn

@@ -124,6 +124,19 @@ func _create_player_from_db(world: Dictionary, club: ClubData, entry: Dictionary
 	p.contract_years = int(entry.contract)
 	p.salary = p.expected_salary()
 	p.form = randf_range(0.9, 1.1)
+	# Nationalität und Eigenschaften aus der Datenbank; ältere DB-Stände ohne
+	# diese Felder bekommen sie deterministisch aus dem Namen abgeleitet
+	p.nat = str(entry.get("nat", ""))
+	if p.nat == "":
+		p.nat = Nations.guess_for_name(p.first_name, p.last_name)
+	if entry.has("traits"):
+		for t in entry.traits:
+			if PlayerData.TRAITS.has(str(t)):
+				p.traits.append(str(t))
+	else:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash("%s|%s|traits" % [p.first_name, p.last_name])
+		p.traits = PlayerData.roll_traits(p.pos, rng)
 	p.club_id = club.id
 	world.players[p.id] = p
 	club.player_ids.append(p.id)
@@ -157,6 +170,8 @@ func _create_player(world: Dictionary, club: ClubData, pos: String, boost: int =
 	p.stamina = clampi(randi_range(45, 90) - (8 if p.age >= 31 else 0), 30, 95)
 	p.contract_years = randi_range(1, 4)
 	p.salary = p.expected_salary()
+	p.nat = Nations.roll(p.first_name, p.last_name)
+	p.traits = PlayerData.roll_traits(p.pos)
 	p.club_id = club.id
 	world.players[p.id] = p
 	club.player_ids.append(p.id)
@@ -183,6 +198,8 @@ func create_youth_player(world: Dictionary, club: ClubData, pos: String, bonus: 
 	p.stamina = randi_range(55, 90)
 	p.contract_years = 3
 	p.salary = p.expected_salary()
+	p.nat = Nations.roll(p.first_name, p.last_name, true)
+	p.traits = PlayerData.roll_traits(p.pos)
 	p.club_id = club.id
 	world.players[p.id] = p
 	club.player_ids.append(p.id)

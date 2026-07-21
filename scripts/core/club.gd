@@ -26,8 +26,12 @@ var budget: int = 5000000
 var sponsor_name: String = ""
 var sponsor_per_md: int = 50000
 var chairman: String = ""      # Vorstandsvorsitzender (fest je Verein, aus clubs.json)
+## Bankgröße in Liga 1 und 2 (später über eine Ligen-Basis editierbar).
+const BENCH_SIZE := 7
+
 var formation: String = "4-4-2"
-var lineup: Array = []        # Spieler-IDs der Startelf (wird v. a. für den eigenen Verein gepflegt)
+var lineup: Array = []        # Spieler-IDs der Startelf (slot-treu zur Formation)
+var bench: Array = []         # Spieler-IDs der Ersatzbank (max. BENCH_SIZE)
 var player_ids: Array = []
 
 func players(all_players: Dictionary) -> Array:
@@ -114,6 +118,32 @@ func match_lineup(all_players: Dictionary) -> Array:
 			return lineup
 	return best_eleven(all_players)
 
+## Beste Ersatzbank: Ersatztorwart zuerst (falls vorhanden), dann die stärksten
+## fitten Restspieler bis BENCH_SIZE.
+func best_bench(all_players: Dictionary, the_lineup: Array) -> Array:
+	var rest := players(all_players).filter(func(p): return p.is_available() and not the_lineup.has(p.id))
+	rest.sort_custom(func(a, b): return a.effective_rating() > b.effective_rating())
+	var result: Array = []
+	for p in rest:
+		if p.group() == "TW":
+			result.append(p.id)
+			break
+	for p in rest:
+		if result.size() >= BENCH_SIZE:
+			break
+		if not result.has(p.id):
+			result.append(p.id)
+	return result
+
+## Gültige Bank für ein Spiel: gespeicherte Bank (bereinigt um Unfitte/Aufgestellte),
+## bei leerer Bank automatisch die beste.
+func match_bench(all_players: Dictionary, the_lineup: Array) -> Array:
+	var valid := bench.filter(func(pid):
+		return player_ids.has(pid) and not the_lineup.has(pid) and all_players[pid].is_available())
+	if valid.is_empty():
+		return best_bench(all_players, the_lineup)
+	return valid.slice(0, BENCH_SIZE)
+
 func salaries_per_month(all_players: Dictionary) -> int:
 	var total := 0
 	for p in players(all_players):
@@ -163,7 +193,7 @@ func to_dict() -> Dictionary:
 		"stadium": stadium, "cap": capacity, "color": color, "base": base_strength,
 		"league": league_id, "budget": budget, "sponsor": sponsor_name,
 		"sponsor_md": sponsor_per_md, "chairman": chairman, "formation": formation,
-		"lineup": lineup, "players": player_ids,
+		"lineup": lineup, "bench": bench, "players": player_ids,
 	}
 
 static func from_dict(d: Dictionary) -> ClubData:
@@ -184,6 +214,8 @@ static func from_dict(d: Dictionary) -> ClubData:
 	c.formation = d.formation
 	for pid in d.lineup:
 		c.lineup.append(int(pid))
+	for pid in d.get("bench", []):
+		c.bench.append(int(pid))
 	for pid in d.players:
 		c.player_ids.append(int(pid))
 	return c

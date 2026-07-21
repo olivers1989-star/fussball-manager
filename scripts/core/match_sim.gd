@@ -46,8 +46,12 @@ var ai_a := true
 var cond := {}              # pid -> aktuelle Frische im Spiel (sinkt Minute für Minute)
 var dayform := {}           # pid -> Tagesform 0.94..1.06 (jeden Spieltag neu ausgewürfelt)
 
+var bench_h: Array = []     # Ersatzbank (max. ClubData.BENCH_SIZE): nur von hier darf gewechselt werden
+var bench_a: Array = []
 var _off_h: Array = []      # Ausgewechselte dürfen nicht zurück aufs Feld
 var _off_a: Array = []
+var _is_home_side := {}     # pid -> true/false (für Eigenschaften wie Heimspielheld)
+var _subbed_in := {}        # pid -> true für Eingewechselte (Eigenschaft "Joker")
 var _note_adj := {}         # pid -> Noten-Anpassung durch Aktionen (Tore, Karten ...)
 var _appeared := {}         # pid -> true für alle eingesetzten Spieler
 var _rng := RandomNumberGenerator.new()
@@ -61,6 +65,12 @@ func setup(p_home: ClubData, p_away: ClubData, p_players: Dictionary) -> void:
 	lineup_a = away.match_lineup(players).duplicate()
 	slots_h = _slots_for(home, lineup_h)
 	slots_a = _slots_for(away, lineup_a)
+	bench_h = home.match_bench(players, lineup_h).duplicate()
+	bench_a = away.match_bench(players, lineup_a).duplicate()
+	for pid in home.player_ids:
+		_is_home_side[pid] = true
+	for pid in away.player_ids:
+		_is_home_side[pid] = false
 	# Frische übernehmen und Tagesform auswürfeln – jeder Spieler hat gute und schlechte Tage
 	for pid in home.player_ids + away.player_ids:
 		cond[pid] = players[pid].condition
@@ -153,6 +163,8 @@ func substitute(is_home: bool, pid_out: int, pid_in: int) -> String:
 		return "Dieser Spieler steht nicht auf dem Feld."
 	if lineup.has(pid_in) or off.has(pid_in) or not club.player_ids.has(pid_in):
 		return "Dieser Spieler kann nicht eingewechselt werden."
+	if not (bench_h if is_home else bench_a).has(pid_in):
+		return "Dieser Spieler steht nicht auf der Ersatzbank."
 	var p_out: PlayerData = players[pid_out]
 	var p_in: PlayerData = players[pid_in]
 	if not p_in.is_available():
@@ -162,6 +174,7 @@ func substitute(is_home: bool, pid_out: int, pid_in: int) -> String:
 	lineup[lineup.find(pid_out)] = pid_in
 	off.append(pid_out)
 	_appeared[pid_in] = true
+	_subbed_in[pid_in] = true
 	if is_home:
 		subs_h += 1
 	else:
@@ -188,11 +201,12 @@ func set_mentality(is_home: bool, m: String) -> bool:
 func subs_used(is_home: bool) -> int:
 	return subs_h if is_home else subs_a
 
+## Wechselkandidaten: NUR die nominierte Ersatzbank (max. 7 Plätze).
 func bench(is_home: bool) -> Array:
 	var lineup: Array = lineup_h if is_home else lineup_a
 	var off: Array = _off_h if is_home else _off_a
-	var club: ClubData = home if is_home else away
-	return club.player_ids.filter(func(pid):
+	var pool: Array = bench_h if is_home else bench_a
+	return pool.filter(func(pid):
 		return not lineup.has(pid) and not off.has(pid) and players[pid].is_available())
 
 ## Alle eingesetzten Spieler einer Seite (Startelf + Eingewechselte + Ausgewechselte).
@@ -233,6 +247,8 @@ func _chance(for_home: bool, own: Dictionary, opp: Dictionary) -> void:
 		var header := _pick_scorer(lineup, "kopfball", for_home)
 		var denom: float = opp.def * 0.75 + opp.box * 0.25
 		var conversion := clampf(0.24 * pow(own.header / denom, 1.3), 0.05, 0.55)
+		if header.has_trait("Kopfballungeheuer"):
+			conversion *= 1.12
 		if _rng.randf() < conversion:
 			_goal(for_home, club, header, "TOR für %s! Nach einer scharfen Flanke köpft %s zum %s ein.")
 		elif _rng.randf() < 0.4:
@@ -241,6 +257,8 @@ func _chance(for_home: bool, own: Dictionary, opp: Dictionary) -> void:
 	var scorer := _pick_scorer(lineup, "normal", for_home)
 	# Die Abschlussstärke des Schützen entscheidet mit (Knipser-Faktor)
 	var conversion := clampf(0.30 * pow(own.att / opp.def, 1.4) * (0.7 + scorer.attr("abschluss") / 200.0), 0.05, 0.7)
+	if scorer.has_trait("Knipser"):
+		conversion *= 1.12
 	# Nervenstärke zählt in der Schlussphase
 	if minute >= 75:
 		conversion *= 0.9 + scorer.attr("nerven") / 500.0
@@ -254,9 +272,16 @@ func _set_piece(for_home: bool, own: Dictionary, opp: Dictionary) -> void:
 	var lineup: Array = lineup_h if for_home else lineup_a
 	var club: ClubData = home if for_home else away
 	var taker := _best_by(lineup, "standards")
+	# Ein Freistoßspezialist schnappt sich den Ball, auch wenn andere bessere Standards haben
+	for pid in lineup:
+		if players[pid].has_trait("Freistoßspezialist"):
+			taker = players[pid]
+			break
 	if _rng.randf() < 0.4:
 		# Direkter Freistoß
 		var conversion := clampf(0.04 + taker.attr("standards") * 0.0013, 0.03, 0.17)
+		if taker.has_trait("Freistoßspezialist"):
+			conversion += 0.05
 		if _rng.randf() < conversion:
 			_goal(for_home, club, taker, "TOR für %s! %s zirkelt den Freistoß direkt ins Netz – %s.")
 		elif _rng.randf() < 0.5:
@@ -276,9 +301,19 @@ func _penalty(for_home: bool, opp: Dictionary) -> void:
 	var lineup: Array = lineup_h if for_home else lineup_a
 	var club: ClubData = home if for_home else away
 	var taker := _best_by_combo(lineup, "standards", "nerven")
+	# Ein Elfmeterspezialist übernimmt die Verantwortung immer selbst
+	for pid in lineup:
+		if players[pid].has_trait("Elfmeterspezialist"):
+			taker = players[pid]
+			break
 	_emit("chance", "ELFMETER für %s! %s legt sich den Ball zurecht …" % [club.name, taker.full_name()])
 	var composure := (taker.attr("standards") + taker.attr("nerven")) / 2.0
 	var conversion := clampf(0.55 + (composure - 40.0) * 0.005 - (opp.gk_reflex - 60.0) * 0.002, 0.45, 0.92)
+	if taker.has_trait("Elfmeterspezialist"):
+		conversion += 0.08
+	if _keeper_of(not for_home).has_trait("Elfmeterkiller"):
+		conversion -= 0.12
+	conversion = clampf(conversion, 0.3, 0.95)
 	if _rng.randf() < conversion:
 		_goal(for_home, club, taker, "TOR für %s! %s verwandelt den Elfmeter eiskalt – %s.")
 	else:
@@ -357,11 +392,15 @@ func _maybe_card_side(card_home: bool) -> void:
 	var chance := 0.0055 * (0.5 + (aggr_sum / lineup.size()) / 75.0)
 	if _rng.randf() >= chance:
 		return
-	# Aggressive Spieler kassieren häufiger Karten
+	# Aggressive Spieler kassieren häufiger Karten (Hitzköpfe erst recht)
 	var total := 0.0
 	var weights: Array = []
 	for i in range(1, lineup.size()):
 		var w: float = 0.4 + players[lineup[i]].attr("aggressivitaet") / 70.0
+		if players[lineup[i]].has_trait("Hitzkopf"):
+			w *= 1.9
+		elif players[lineup[i]].has_trait("Fairplay"):
+			w *= 0.35
 		total += w
 		weights.append([lineup[i], w])
 	var roll := _rng.randf() * total
@@ -372,7 +411,10 @@ func _maybe_card_side(card_home: bool) -> void:
 			pid = entry[0]
 			break
 	var p: PlayerData = players[pid]
-	if _rng.randf() < clampf(0.03 + p.attr("aggressivitaet") * 0.0006, 0.03, 0.12):
+	var red_chance := clampf(0.03 + p.attr("aggressivitaet") * 0.0006, 0.03, 0.12)
+	if p.has_trait("Hitzkopf"):
+		red_chance += 0.03
+	if _rng.randf() < red_chance:
 		p.red_cards += 1
 		p.suspended_matchdays += 2
 		_note_adj[p.id] = _note_adj.get(p.id, 0.0) + 1.2
@@ -411,6 +453,8 @@ func _pick_scorer(lineup: Array, mode: String, is_home: bool) -> PlayerData:
 		var p: PlayerData = players[pid]
 		var value: float = p.combo("kopfball", "sprung") if mode == "kopfball" else float(p.attr("abschluss"))
 		var w: float = group_weights[PlayerData.GROUP_OF[_slot_of(pid, is_home)]] * (value / 60.0)
+		if mode == "kopfball" and p.has_trait("Kopfballungeheuer"):
+			w *= 1.5
 		total += w
 		pool.append([p, w])
 	var roll := _rng.randf() * total
@@ -420,15 +464,46 @@ func _pick_scorer(lineup: Array, mode: String, is_home: bool) -> PlayerData:
 			return entry[0]
 	return pool.back()[0]
 
-## Leistung eines Spielers in dieser Minute: Stärke × Form × Tagesform × Frische.
+## Leistung eines Spielers in dieser Minute: Stärke × Form × Tagesform × Frische × Eigenschaften.
 func _player_effective(pid: int) -> float:
 	var p: PlayerData = players[pid]
-	return p.rating() * dayform[pid] * (0.72 + 0.28 * cond[pid] / 100.0)
+	return p.rating() * dayform[pid] * (0.72 + 0.28 * cond[pid] / 100.0) * _situ_factor(pid)
 
-## Effektiver Attributwert in dieser Minute (Form, Tagesform und Frische eingerechnet).
+## Effektiver Attributwert in dieser Minute (Form, Tagesform, Frische und
+## situative Eigenschaften wie Joker/Eiskalt/Heimspielheld eingerechnet).
 func _attr_val(pid: int, key: String) -> float:
 	var p: PlayerData = players[pid]
-	return p.attr(key) * p.form * dayform[pid] * (0.72 + 0.28 * cond[pid] / 100.0)
+	return p.attr(key) * p.form * dayform[pid] * (0.72 + 0.28 * cond[pid] / 100.0) * _situ_factor(pid)
+
+## Situative Eigenschafts-Boni dieser Minute.
+func _situ_factor(pid: int) -> float:
+	var p: PlayerData = players[pid]
+	if p.traits.is_empty():
+		return 1.0
+	var f := 1.0
+	if _subbed_in.has(pid) and p.has_trait("Joker"):
+		f *= 1.06
+	if minute >= 75:
+		if p.has_trait("Eiskalt"):
+			f *= 1.05
+		elif p.has_trait("Nervenbündel"):
+			f *= 0.94
+	if p.has_trait("Spätzünder"):
+		f *= 1.05 if minute > 45 else 0.97
+	var at_home: bool = _is_home_side.get(pid, true)
+	if p.has_trait("Heimspielheld") and at_home:
+		f *= 1.05
+	if p.has_trait("Auswärtskämpfer") and not at_home:
+		f *= 1.05
+	return f
+
+## Der Torwart einer Seite (der Spieler auf dem TW-Slot).
+func _keeper_of(is_home: bool) -> PlayerData:
+	var lineup: Array = lineup_h if is_home else lineup_a
+	for pid in lineup:
+		if _slot_of(pid, is_home) == "TW":
+			return players[pid]
+	return players[lineup[0]]
 
 const WIDE_POS := ["LV", "RV", "LM", "RM", "LA", "RA"]
 
@@ -469,7 +544,11 @@ func _ratings(lineup: Array, slots: Array, mentality: String, factor: float, tra
 		# zusätzlichem Vertrautheits-Abzug (fremde Laufwege).
 		var slot: String = slots[i] if i < slots.size() else p.pos
 		var fam := p.position_familiarity(slot)
-		best_leader = maxf(best_leader, float(p.attr("fuehrung")))
+		# Eigenschaften: Spielmacher heben das Mittelfeldspiel, Führungsspieler
+		# verstärken den Kapitänseffekt
+		if p.has_trait("Spielmacher") and PlayerData.GROUP_OF[slot] == "MF":
+			fam *= 1.06
+		best_leader = maxf(best_leader, float(p.attr("fuehrung")) + (12.0 if p.has_trait("Führungsspieler") else 0.0))
 		ent_sum += p.attr("entschlossenheit")
 		konz_sum += p.attr("konzentration")
 		if slot in WIDE_POS:
@@ -538,6 +617,8 @@ func _drain_rate(p: PlayerData, mentality: String) -> float:
 	var m := 1.15 if mentality == "offensiv" else (0.9 if mentality == "defensiv" else 1.0)
 	# Einsatzbereite Spieler ackern mehr – das kostet zusätzlich Frische
 	var work := 0.92 + p.attr("einsatz") * 0.0016
+	if p.has_trait("Dauerbrenner"):
+		work *= 0.78
 	return 0.55 * (1.6 - p.stamina / 100.0) * m * work
 
 ## Verletzungen: müde Spieler trifft es eher, robuste stecken mehr weg.
@@ -554,6 +635,10 @@ func _maybe_injury() -> void:
 	var weights: Array = []
 	for pid in lineup:
 		var w: float = (1.5 - cond[pid] / 100.0) * (1.35 - players[pid].attr("robust") / 100.0)
+		if players[pid].has_trait("Verletzungsanfällig"):
+			w *= 1.5
+		elif players[pid].has_trait("Eisenmann"):
+			w *= 0.6
 		total += w
 		weights.append([pid, w])
 	var roll := _rng.randf() * total
@@ -566,6 +651,10 @@ func _maybe_injury() -> void:
 	var p: PlayerData = players[injured_pid]
 	# Robuste Spieler stecken den Schlag oft weg – die Verletzung bleibt aus
 	var risk := clampf(1.35 - p.attr("robust") / 100.0, 0.3, 1.3)
+	if p.has_trait("Verletzungsanfällig"):
+		risk *= 1.35
+	elif p.has_trait("Eisenmann"):
+		risk *= 0.55
 	if _rng.randf() > risk * 0.85:
 		return
 	p.injury_matchdays = _rng.randi_range(1, 5)
@@ -583,6 +672,7 @@ func _maybe_injury() -> void:
 			var pid_in: int = pool[0]
 			lineup[idx] = pid_in
 			_appeared[pid_in] = true
+			_subbed_in[pid_in] = true
 			if is_home:
 				subs_h += 1
 			else:
