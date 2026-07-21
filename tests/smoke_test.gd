@@ -17,10 +17,16 @@ func _ready() -> void:
 	Game.training_focus = "Leistung"
 
 	# Attribute: vollständig vorhanden, Stärke aus Attributen abgeleitet
+	var youth_count := 0
 	for pid in Game.world.players:
 		var pl0: PlayerData = Game.world.players[pid]
 		assert(pl0.attributes.size() == PlayerData.ATTRIBUTES.size())
-		assert(pl0.strength >= 25 and pl0.strength <= 96)
+		assert(pl0.strength >= 1 and pl0.strength <= 99)
+		assert(pl0.potential >= pl0.strength or pl0.potential >= 55)
+		if pl0.age <= 17:
+			youth_count += 1
+	print("Nachwuchsspieler (14–17) in der Welt: %d" % youth_count)
+	assert(youth_count > 30)
 	var tw_sample: PlayerData = Game.my_club().players_by_pos(Game.world.players, "TW")[0]
 	var st_sample: PlayerData = Game.my_club().players_by_pos(Game.world.players, "MS")[0]
 	assert(tw_sample.attr("reflexe") > tw_sample.attr("abschluss"))

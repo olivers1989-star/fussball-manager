@@ -133,8 +133,13 @@ func attr(key: String) -> int:
 func group() -> String:
 	return GROUP_OF[pos]
 
-## Wie viel Luft das Talent nach oben lässt (auf die Stärke bei Erstellung).
-const POTENTIAL_BONUS := [4, 7, 10, 14, 19]
+## Potenzialband je Talentstufe – UNABHÄNGIG von der aktuellen Stärke.
+## So kann ein 14-Jähriger mit Stärke 17 und 5 Sternen zur Weltklasse reifen.
+const POTENTIAL_BANDS := {1: [55, 68], 2: [62, 75], 3: [70, 84], 4: [79, 92], 5: [86, 99]}
+
+static func roll_potential(p_talent: int, current_strength: int) -> int:
+	var band: Array = POTENTIAL_BANDS[p_talent]
+	return maxi(randi_range(int(band[0]), int(band[1])), current_strength + 2)
 
 ## Talentstufe würfeln: 3★ ist der Normalfall, 5★ selten.
 static func roll_talent() -> int:
@@ -168,7 +173,7 @@ func develop_by_strength(delta: float) -> void:
 	var guard := 0
 	while absi(strength - start) < target and guard < 300:
 		var key: String = relevant.pick_random() if randf() < 0.85 else ATTRIBUTES.keys().pick_random()
-		attributes[key] = clampi(attr(key) + dir, 5, 96)
+		attributes[key] = clampi(attr(key) + dir, 3, 99)
 		recompute_strength()
 		guard += 1
 
@@ -180,7 +185,7 @@ func expected_salary() -> int:
 static func make_attributes(p_pos: String, target: int) -> Dictionary:
 	var attrs := {}
 	for key in ATTRIBUTES:
-		attrs[key] = clampi(target + _offset_for(p_pos, key) + randi_range(-6, 6), 5, 96)
+		attrs[key] = clampi(target + _offset_for(p_pos, key) + randi_range(-6, 6), 3, 99)
 	return attrs
 
 ## Kombinierter Wert zweier Attribute (z. B. Kopfball × Sprungkraft).
@@ -193,7 +198,7 @@ func recompute_strength() -> void:
 	var total := 0.0
 	for key in weights:
 		total += attr(key) * weights[key]
-	strength = clampi(int(round(total)), 25, 96)
+	strength = clampi(int(round(total)), 1, 99)
 
 ## Entwicklung: verändert bevorzugt positionsrelevante Attribute (70 %),
 ## gelegentlich beliebige – und aktualisiert die Stärke.
@@ -205,7 +210,7 @@ func develop(amount: int, tries: int) -> void:
 			key = relevant.pick_random()
 		else:
 			key = ATTRIBUTES.keys().pick_random()
-		attributes[key] = clampi(attr(key) + amount, 5, 96)
+		attributes[key] = clampi(attr(key) + amount, 3, 99)
 	recompute_strength()
 
 func rating() -> float:
@@ -281,7 +286,7 @@ static func from_dict(d: Dictionary) -> PlayerData:
 		p.talent = roll_talent()
 	p.potential = int(d.get("pot", 0))
 	if p.potential <= 0:
-		p.potential = mini(96, p.strength + POTENTIAL_BONUS[p.talent - 1])
+		p.potential = roll_potential(p.talent, p.strength)
 	p.matches_season = int(d.get("ms", 0))
 	p.ratings_sum = float(d.get("rs", 0.0))
 	p.form = float(d.form)

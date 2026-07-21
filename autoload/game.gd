@@ -606,32 +606,41 @@ func end_season() -> Dictionary:
 	world.matchday_dates = ScheduleGen.matchday_dates(int(world.season_year))
 	return summary
 
-## Saison-Entwicklung in Stärkepunkten: Alterskurve × Talent × Einsatzzeit ×
-## Noten × Entschlossenheit, gebremst vom Potenzial. Negativ ab Anfang 30.
+## Saison-Entwicklung in Stärkepunkten: steile Jugendkurve (ab 14!), Talent,
+## Einsatzzeit (ab 18) bzw. Akademie-Training (bis 17), Noten, Entschlossenheit –
+## gebremst vom Potenzial. Negativ ab Anfang 30.
 func _season_development(p: PlayerData) -> float:
 	var delta := 0.0
-	if p.age <= 19:
-		delta = 2.2
+	if p.age <= 16:
+		delta = 5.5
+	elif p.age <= 19:
+		delta = 4.0
 	elif p.age <= 21:
-		delta = 1.8
+		delta = 2.6
 	elif p.age <= 23:
-		delta = 1.4
+		delta = 1.6
 	elif p.age <= 26:
-		delta = 0.5
+		delta = 0.7
 	elif p.age <= 29:
 		delta = 0.0
 	elif p.age <= 31:
 		delta = -0.8
 	elif p.age <= 33:
-		delta = -1.8
+		delta = -1.9
 	else:
-		delta = -2.6
+		delta = -2.8
 	if delta > 0.0:
-		# Talent bestimmt das Tempo, Einsatzzeit und Leistung beschleunigen
+		# Talent bestimmt das Tempo
 		delta *= [0.5, 0.75, 1.0, 1.35, 1.75][p.talent - 1]
-		delta *= 0.6 + minf(p.matches_season, 28.0) / 28.0 * 0.8
-		if p.matches_season >= 5:
-			delta *= clampf(1.0 + (3.2 - p.avg_rating()) * 0.25, 0.8, 1.3)
+		if p.age <= 17:
+			# Jugendliche wachsen im Akademie-Training – Jugendarbeit beschleunigt
+			if p.club_id == my_club_id:
+				delta *= 1.0 + skill("jugend") * 0.04
+		else:
+			# Profis brauchen Einsatzzeit und Leistung
+			delta *= 0.6 + minf(p.matches_season, 28.0) / 28.0 * 0.8
+			if p.matches_season >= 5:
+				delta *= clampf(1.0 + (3.2 - p.avg_rating()) * 0.25, 0.8, 1.3)
 		delta *= 1.0 + (p.attr("entschlossenheit") - 50.0) / 500.0
 		if p.club_id == my_club_id and training_focus == "Leistung" and p.age <= 26:
 			delta += 0.4
@@ -642,7 +651,7 @@ func _season_development(p: PlayerData) -> float:
 		else:
 			delta = minf(delta, headroom) * clampf(headroom / 5.0, 0.25, 1.0)
 	delta += randf_range(-0.3, 0.3)
-	return clampf(delta, -4.0, 5.0)
+	return clampf(delta, -4.0, 9.0)
 
 # ------------------------------------------------------------------ Jobangebote (Echte Karriere)
 

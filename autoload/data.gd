@@ -73,6 +73,9 @@ func generate_world() -> Dictionary:
 		world.clubs[c.id] = c
 		world.leagues[c.league_id].club_ids.append(c.id)
 		_generate_squad(world, c)
+		# Jeder Verein startet mit ein paar Nachwuchsspielern (14–18)
+		for youth_no in 3:
+			create_youth_player(world, c, PlayerData.POSITIONS.pick_random())
 		c.lineup = c.best_eleven(world.players)
 
 	l1.fixtures = ScheduleGen.build_fixtures(l1.club_ids)
@@ -103,7 +106,7 @@ func _create_player(world: Dictionary, club: ClubData, pos: String, boost: int =
 	p.attributes = PlayerData.make_attributes(pos, target)
 	p.recompute_strength()
 	p.talent = PlayerData.roll_talent()
-	p.potential = mini(96, p.strength + PlayerData.POTENTIAL_BONUS[p.talent - 1])
+	p.potential = PlayerData.roll_potential(p.talent, p.strength)
 	p.form = randf_range(0.9, 1.1)
 	p.stamina = clampi(randi_range(45, 90) - (8 if p.age >= 31 else 0), 30, 95)
 	p.contract_years = randi_range(1, 4)
@@ -113,7 +116,8 @@ func _create_player(world: Dictionary, club: ClubData, pos: String, boost: int =
 	club.player_ids.append(p.id)
 	return p
 
-## Erzeugt einen Jugendspieler (für das Auffüllen der Kader zum Saisonwechsel).
+## Erzeugt einen Jugendspieler (14–18 Jahre). Je jünger, desto schwächer der Start –
+## ein 14-Jähriger kann mit Stärke ~15–30 beginnen und trotzdem 5★-Potenzial haben.
 ## bonus: zusätzliche Stärke, z. B. durch die Trainer-Fähigkeit "Jugendarbeit".
 func create_youth_player(world: Dictionary, club: ClubData, pos: String, bonus: int = 0) -> PlayerData:
 	var p := PlayerData.new()
@@ -122,12 +126,13 @@ func create_youth_player(world: Dictionary, club: ClubData, pos: String, bonus: 
 	p.first_name = first_names.pick_random()
 	p.last_name = last_names.pick_random()
 	p.pos = pos
-	p.age = randi_range(17, 19)
-	var target := clampi(club.base_strength + randi_range(-16, -4) + bonus, 28, 90)
+	p.age = randi_range(14, 18)
+	var deficit := (19 - p.age) * 6 + randi_range(4, 12)
+	var target := clampi(club.base_strength - deficit + bonus, 12, 90)
 	p.attributes = PlayerData.make_attributes(pos, target)
 	p.recompute_strength()
 	p.talent = PlayerData.roll_talent()
-	p.potential = mini(96, p.strength + PlayerData.POTENTIAL_BONUS[p.talent - 1])
+	p.potential = PlayerData.roll_potential(p.talent, p.strength)
 	p.form = randf_range(0.9, 1.1)
 	p.stamina = randi_range(55, 90)
 	p.contract_years = 3

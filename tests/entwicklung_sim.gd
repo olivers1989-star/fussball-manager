@@ -23,6 +23,16 @@ func _ready() -> void:
 	if vet != null:
 		_tracked.append({"pid": vet.id, "label": "Routinier"})
 
+	# Wunderkind-Szenario: 14-Jähriger mit Stärke ~17 und 5★-Potenzial 95
+	var kid := _find(func(p): return p.age <= 18 and p.pos == "MS")
+	if kid != null:
+		kid.age = 14
+		kid.attributes = PlayerData.make_attributes(kid.pos, 17)
+		kid.recompute_strength()
+		kid.talent = 5
+		kid.potential = 95
+		_tracked.push_front({"pid": kid.id, "label": "Wunderkind"})
+
 	print("Verfolgte Spieler (Start %s):" % Game.season_label())
 	for t in _tracked:
 		var p: PlayerData = Game.world.players[t.pid]
