@@ -129,9 +129,12 @@ func run_full() -> void:
 	while not finished:
 		tick()
 
-## Formations-Slots passend zur Aufstellung; Fallback auf die eigene Position,
-## falls Aufstellung und Formation nicht zusammenpassen (z. B. Rumpfkader).
+## Positions-Slots passend zur Aufstellung: frei positionierte Elf (Zonen der
+## Feldpunkte) für die gespeicherte Aufstellung, sonst das Formations-Preset;
+## Fallback auf die eigene Position bei Rumpfkadern.
 func _slots_for(club: ClubData, lineup: Array) -> Array:
+	if club.lineup == lineup and club.lineup_spots.size() == lineup.size() and not lineup.is_empty():
+		return club.lineup_slots()
 	var slots: Array = ClubData.FORMATIONS.get(club.formation, ClubData.FORMATIONS["4-4-2"]).duplicate()
 	if slots.size() != lineup.size():
 		slots.clear()

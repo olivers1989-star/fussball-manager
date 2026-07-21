@@ -21,6 +21,28 @@ func _ready() -> void:
 				"%s: Slot %s (Index %d) besetzt mit %s (%s)" % [c.name, slots[i], i, p.full_name(), p.pos])
 	print("Slot-Treue OK (3 Vereine, alle Slots gruppengerecht besetzt)")
 
+	# (1b) Zonen-Erkennung: Feldpunkte werden korrekt in Positionen übersetzt
+	assert(ClubData.zone_position(Vector2(0.5, 0.05)) == "TW")
+	assert(ClubData.zone_position(Vector2(0.15, 0.3)) == "LV")
+	assert(ClubData.zone_position(Vector2(0.5, 0.25)) == "IV")
+	assert(ClubData.zone_position(Vector2(0.85, 0.3)) == "RV")
+	assert(ClubData.zone_position(Vector2(0.5, 0.45)) == "DM")
+	assert(ClubData.zone_position(Vector2(0.5, 0.55)) == "ZM")
+	assert(ClubData.zone_position(Vector2(0.5, 0.7)) == "OM")
+	assert(ClubData.zone_position(Vector2(0.1, 0.55)) == "LM")
+	assert(ClubData.zone_position(Vector2(0.9, 0.55)) == "RM")
+	assert(ClubData.zone_position(Vector2(0.15, 0.85)) == "LA")
+	assert(ClubData.zone_position(Vector2(0.85, 0.85)) == "RA")
+	assert(ClubData.zone_position(Vector2(0.5, 0.9)) == "MS")
+	# Jede Preset-Koordinate muss per Zone exakt ihren Formations-Slot ergeben
+	for fname in ClubData.FORMATIONS:
+		var spots: Array = ClubData.FORMATION_SPOTS[fname]
+		for i in 11:
+			var zone := ClubData.zone_position(spots[i])
+			assert(zone == ClubData.FORMATIONS[fname][i],
+				"%s Slot %d: Zone %s statt %s" % [fname, i, zone, ClubData.FORMATIONS[fname][i]])
+	print("Zonen-Erkennung OK (12 Zonen + alle 7 Presets konsistent)")
+
 	# (2) strength_at: Stürmer sind als Innenverteidiger deutlich schwächer
 	var checked := 0
 	for pid in Game.world.players:

@@ -2,7 +2,8 @@ class_name ClubData
 extends RefCounted
 ## Ein Verein mit Kader, Finanzen, Stadion und Taktik.
 
-## Formationen als konkrete Positions-Slots (11 pro Formation).
+## Formationen als konkrete Positions-Slots (11 pro Formation) – dienen als
+## PRESETS; die tatsächliche Aufstellung ist frei positionierbar (lineup_spots).
 const FORMATIONS := {
 	"4-4-2": ["TW", "LV", "IV", "IV", "RV", "LM", "ZM", "ZM", "RM", "MS", "MS"],
 	"4-4-2 (Raute)": ["TW", "LV", "IV", "IV", "RV", "DM", "ZM", "ZM", "OM", "MS", "MS"],
@@ -12,6 +13,47 @@ const FORMATIONS := {
 	"3-5-2": ["TW", "IV", "IV", "IV", "LM", "DM", "ZM", "RM", "OM", "MS", "MS"],
 	"5-3-2": ["TW", "LV", "IV", "IV", "IV", "RV", "DM", "ZM", "OM", "MS", "MS"],
 }
+
+## Feld-Koordinaten je Formations-Preset (x: 0=links..1=rechts, y: 0=eigenes Tor..1=vorne).
+const FORMATION_SPOTS := {
+	"4-4-2": [Vector2(0.5, 0.05), Vector2(0.14, 0.3), Vector2(0.38, 0.24), Vector2(0.62, 0.24), Vector2(0.86, 0.3), Vector2(0.14, 0.58), Vector2(0.38, 0.52), Vector2(0.62, 0.52), Vector2(0.86, 0.58), Vector2(0.38, 0.84), Vector2(0.62, 0.84)],
+	"4-4-2 (Raute)": [Vector2(0.5, 0.05), Vector2(0.14, 0.3), Vector2(0.38, 0.24), Vector2(0.62, 0.24), Vector2(0.86, 0.3), Vector2(0.5, 0.42), Vector2(0.26, 0.56), Vector2(0.74, 0.56), Vector2(0.5, 0.68), Vector2(0.38, 0.86), Vector2(0.62, 0.86)],
+	"4-3-3": [Vector2(0.5, 0.05), Vector2(0.14, 0.3), Vector2(0.38, 0.24), Vector2(0.62, 0.24), Vector2(0.86, 0.3), Vector2(0.5, 0.44), Vector2(0.32, 0.58), Vector2(0.68, 0.66), Vector2(0.14, 0.8), Vector2(0.5, 0.86), Vector2(0.86, 0.8)],
+	"4-2-3-1": [Vector2(0.5, 0.05), Vector2(0.14, 0.3), Vector2(0.38, 0.24), Vector2(0.62, 0.24), Vector2(0.86, 0.3), Vector2(0.36, 0.46), Vector2(0.64, 0.46), Vector2(0.5, 0.66), Vector2(0.14, 0.8), Vector2(0.86, 0.8), Vector2(0.5, 0.86)],
+	"4-5-1": [Vector2(0.5, 0.05), Vector2(0.14, 0.3), Vector2(0.38, 0.24), Vector2(0.62, 0.24), Vector2(0.86, 0.3), Vector2(0.12, 0.6), Vector2(0.34, 0.46), Vector2(0.66, 0.52), Vector2(0.88, 0.6), Vector2(0.5, 0.68), Vector2(0.5, 0.86)],
+	"3-5-2": [Vector2(0.5, 0.05), Vector2(0.32, 0.24), Vector2(0.5, 0.2), Vector2(0.68, 0.24), Vector2(0.12, 0.58), Vector2(0.36, 0.46), Vector2(0.64, 0.55), Vector2(0.88, 0.58), Vector2(0.5, 0.68), Vector2(0.38, 0.86), Vector2(0.62, 0.86)],
+	"5-3-2": [Vector2(0.5, 0.05), Vector2(0.12, 0.34), Vector2(0.3, 0.24), Vector2(0.5, 0.2), Vector2(0.7, 0.24), Vector2(0.88, 0.34), Vector2(0.36, 0.46), Vector2(0.64, 0.55), Vector2(0.5, 0.68), Vector2(0.38, 0.86), Vector2(0.62, 0.86)],
+}
+
+## Zonen-Erkennung: übersetzt einen Punkt auf dem Feld in eine Position.
+## Reihen (vom eigenen Tor aus): TW · LV/IV/RV · DM/ZM/OM (+LM/RM außen) · LA/MS/RA.
+static func zone_position(spot: Vector2) -> String:
+	var x := clampf(spot.x, 0.0, 1.0)
+	var y := clampf(spot.y, 0.0, 1.0)
+	if y < 0.13 and absf(x - 0.5) < 0.22:
+		return "TW"
+	if y < 0.38:   # Abwehrreihe
+		if x < 0.28:
+			return "LV"
+		if x > 0.72:
+			return "RV"
+		return "IV"
+	if y < 0.74:   # Mittelfeldreihe
+		if x < 0.24:
+			return "LM"
+		if x > 0.76:
+			return "RM"
+		if y < 0.5:
+			return "DM"
+		if y < 0.63:
+			return "ZM"
+		return "OM"
+	# Angriffsreihe
+	if x < 0.28:
+		return "LA"
+	if x > 0.72:
+		return "RA"
+	return "MS"
 
 var id: int = 0
 var name: String = ""
@@ -30,9 +72,41 @@ var chairman: String = ""      # Vorstandsvorsitzender (fest je Verein, aus club
 const BENCH_SIZE := 7
 
 var formation: String = "4-4-2"
-var lineup: Array = []        # Spieler-IDs der Startelf (slot-treu zur Formation)
+var lineup: Array = []        # Spieler-IDs der Startelf
+var lineup_spots: Array = []  # Feld-Koordinaten je Startelf-Index (frei positionierbar)
 var bench: Array = []         # Spieler-IDs der Ersatzbank (max. BENCH_SIZE)
 var player_ids: Array = []
+
+## Die Positionen der aktuellen Aufstellung, aus den Feld-Koordinaten abgeleitet
+## (Zonen-Erkennung). Fallback: die Slots des Formations-Presets.
+func lineup_slots() -> Array:
+	if lineup_spots.size() == lineup.size() and not lineup_spots.is_empty():
+		var slots: Array = []
+		for spot in lineup_spots:
+			slots.append(zone_position(spot))
+		return slots
+	return FORMATIONS[formation].slice(0, lineup.size())
+
+## Setzt ein Formations-Preset: Feldpunkte übernehmen, Spieler passend verteilen.
+func apply_formation(name: String, all_players: Dictionary) -> void:
+	formation = name
+	lineup_spots = FORMATION_SPOTS[name].duplicate()
+	if lineup.size() == 11:
+		align_lineup(all_players)
+	else:
+		lineup = best_eleven(all_players)
+
+## Anzeigename der aktuellen Ausrichtung, z. B. "4-4-2" oder "3-2-5".
+func shape_label() -> String:
+	var def := 0
+	var mid := 0
+	var att := 0
+	for slot in lineup_slots():
+		match PlayerData.GROUP_OF[slot]:
+			"AB": def += 1
+			"MF": mid += 1
+			"ST": att += 1
+	return "%d-%d-%d" % [def, mid, att]
 
 func players(all_players: Dictionary) -> Array:
 	var result: Array = []
@@ -88,15 +162,17 @@ func _fill_slots(slots: Array, pool: Array) -> Array:
 	return eleven.filter(func(pid): return pid > 0)
 
 ## Sortiert eine vorhandene Startelf slot-treu um (z. B. nach dem Laden alter
-## Spielstände oder einem Formationswechsel mit denselben Spielern).
+## Spielstände oder einem Preset-Wechsel mit denselben Spielern). Nutzt die
+## Zonen der aktuellen Feldpunkte, sonst die Slots des Formations-Presets.
 func align_lineup(all_players: Dictionary) -> void:
-	if lineup.size() != FORMATIONS[formation].size():
+	var slots: Array = lineup_slots()
+	if lineup.size() != slots.size() or lineup.is_empty():
 		return
 	var pool: Array = []
 	for pid in lineup:
 		if all_players.has(pid):
 			pool.append(all_players[pid])
-	lineup = _fill_slots(FORMATIONS[formation], pool)
+	lineup = _fill_slots(slots, pool)
 
 func _pick_for_slot(available: Array, used: Dictionary, predicate: Callable) -> int:
 	for p in available:
@@ -194,6 +270,7 @@ func to_dict() -> Dictionary:
 		"league": league_id, "budget": budget, "sponsor": sponsor_name,
 		"sponsor_md": sponsor_per_md, "chairman": chairman, "formation": formation,
 		"lineup": lineup, "bench": bench, "players": player_ids,
+		"spots": lineup_spots.map(func(v): return [snappedf(v.x, 0.001), snappedf(v.y, 0.001)]),
 	}
 
 static func from_dict(d: Dictionary) -> ClubData:
@@ -216,6 +293,11 @@ static func from_dict(d: Dictionary) -> ClubData:
 		c.lineup.append(int(pid))
 	for pid in d.get("bench", []):
 		c.bench.append(int(pid))
+	for spot in d.get("spots", []):
+		c.lineup_spots.append(Vector2(float(spot[0]), float(spot[1])))
+	# Ältere Spielstände ohne freie Positionen: Preset-Punkte der Formation
+	if c.lineup_spots.size() != c.lineup.size() and c.lineup.size() == 11:
+		c.lineup_spots = FORMATION_SPOTS.get(c.formation, FORMATION_SPOTS["4-4-2"]).duplicate()
 	for pid in d.players:
 		c.player_ids.append(int(pid))
 	return c

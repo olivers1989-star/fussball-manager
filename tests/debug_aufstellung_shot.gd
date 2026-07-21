@@ -17,9 +17,11 @@ func _ready() -> void:
 	var tab = hub._screens["Aufstellung"]
 	var st: PlayerData = Game.my_club().players_by_pos(Game.world.players, "MS")[0]
 	if Game.my_club().lineup.has(st.id):
-		tab._swap_slots(Game.my_club().lineup.find(st.id), 1)
+		# Freie Positionierung: Stürmer tief in die Abwehrzone ziehen (wird IV)
+		Game.my_club().lineup_spots[Game.my_club().lineup.find(st.id)] = Vector2(0.5, 0.26)
+		tab._refresh_all()
 	else:
-		tab._roster_to_slot(st.id, 1)
+		tab._insert_at_slot(st.id, 1)
 	await get_tree().create_timer(0.8).timeout
 	get_viewport().get_texture().get_image().save_png("user://aufstellung_warn_shot.png")
 	# Andere Formation testen (4-2-3-1)
