@@ -82,9 +82,20 @@ class SlotChip extends Button:
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
 		return data is Dictionary and data.get("kind", "") in ["slot", "bench", "roster"]
 
-	func _drop_data(_at: Vector2, data: Variant) -> void:
-		# Drop direkt auf einem Spieler: Positionen tauschen bzw. ihn ersetzen
-		tab.drop_on_chip(slot_index, data)
+	func _drop_data(at: Vector2, data: Variant) -> void:
+		# Drop auf dem eigenen Kasten = Verschieben (freie Position).
+		# Auf einem anderen Spieler: Mitte = tauschen, Rand = daneben ablegen.
+		if str(data.kind) == "slot":
+			if int(data.slot) == slot_index:
+				tab.drop_on_pitch(position + at, data)
+				return
+			var core := Rect2(size * 0.22, size * 0.56)
+			if core.has_point(at):
+				tab.drop_on_chip(slot_index, data)
+			else:
+				tab.drop_on_pitch(position + at, data)
+		else:
+			tab.drop_on_chip(slot_index, data)
 
 ## Ein Platz auf der Ersatzbank (Spalte neben dem Spielfeld).
 class BenchChip extends Button:
@@ -442,19 +453,28 @@ func _build_roster_row(pid: int, on_bench: bool) -> RosterRow:
 		line.add_child(UITheme.mini_pill("🟥 %d" % p.suspended_matchdays, Color("#854d0e"), Color.WHITE, 48))
 	return row
 
+## Drag-Vorschau: sieht aus wie der Spieler-Kasten und hängt ZENTRIERT am
+## Cursor – der Kasten landet also genau dort, wo man ihn sieht.
 func make_drag_preview(source: Control, pid: int) -> void:
 	var p := Game.get_player(pid)
-	var preview := Label.new()
-	preview.text = "  %s (%s)  " % [p.last_name, p.pos]
 	var panel := PanelContainer.new()
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.05, 0.08, 0.07, 0.95)
-	style.set_corner_radius_all(6)
-	style.set_border_width_all(1)
+	style.bg_color = Color(0.06, 0.09, 0.08, 0.9)
+	style.set_corner_radius_all(8)
+	style.set_border_width_all(2)
 	style.border_color = Color.WHITE
+	style.set_content_margin_all(6)
 	panel.add_theme_stylebox_override("panel", style)
-	panel.add_child(preview)
-	source.set_drag_preview(panel)
+	var label := Label.new()
+	label.text = "%s\n%s · St %d" % [p.last_name, p.pos, p.strength]
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 13)
+	panel.add_child(label)
+	panel.custom_minimum_size = Vector2(142, 58)
+	var wrapper := Control.new()
+	wrapper.add_child(panel)
+	panel.position = -panel.custom_minimum_size / 2.0
+	source.set_drag_preview(wrapper)
 
 # ------------------------------------------------------------------ Drag & Drop
 
