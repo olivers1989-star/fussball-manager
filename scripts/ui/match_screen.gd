@@ -266,8 +266,12 @@ func _on_tick() -> void:
 	_score_label.text = "%d : %d" % [_my_sim.hg, _my_sim.ag]
 	_minute_label.text = "%d'" % _my_sim.minute
 	_update_conference()
+	# Frische & Bänke live aktualisieren (Auswahl bleibt erhalten)
+	if _my_sim.minute % 3 == 0:
+		_refresh_tactic_panel()
 	if _my_sim.minute == 45:
 		_set_paused(true)
+		_refresh_tactic_panel()
 		_minute_label.text = "Halbzeit – Zeit für Anpassungen"
 	if _my_sim.finished:
 		_finish()
@@ -346,9 +350,27 @@ func _on_substitute() -> void:
 
 func _refresh_tactic_panel() -> void:
 	_subs_label.text = "Wechsel: %d/%d" % [_my_sim.subs_used(_my_home), MatchSim.MAX_SUBS]
+	var sel_field := _selected_pid(_field_list)
+	var sel_bench := _selected_pid(_bench_list)
 	var lineup: Array = _my_sim.lineup_h if _my_home else _my_sim.lineup_a
 	_fill_player_list(_field_list, lineup, "FELD")
 	_fill_player_list(_bench_list, _my_sim.bench(_my_home), "BANK")
+	_restore_selection(_field_list, sel_field)
+	_restore_selection(_bench_list, sel_bench)
+
+func _selected_pid(list: ItemList) -> int:
+	var selected := list.get_selected_items()
+	if selected.is_empty():
+		return -1
+	return int(list.get_item_metadata(selected[0]))
+
+func _restore_selection(list: ItemList, pid: int) -> void:
+	if pid < 0:
+		return
+	for i in list.item_count:
+		if int(list.get_item_metadata(i)) == pid:
+			list.select(i)
+			return
 
 func _fill_player_list(list: ItemList, ids: Array, prefix: String) -> void:
 	list.clear()
@@ -389,6 +411,8 @@ func _show_event(ev: Dictionary) -> void:
 			color = "#60a5fa"
 		"injury":
 			color = "#fb923c"
+		"flow":
+			color = "#64748b"
 	_ticker.append_text("[color=%s]%d'  %s[/color]\n" % [color, int(ev.min), ev.text])
 
 func _update_conference() -> void:

@@ -33,6 +33,12 @@ var _sim_close_button: Button
 var _sim_match_button: Button
 var _decision_dialog: ConfirmationDialog
 var _pending_decision := {}
+var _prep_dialog: AcceptDialog
+var _prep_opponent: Label
+var _prep_select: OptionButton
+var _prep_desc: Label
+var _prep_hint: Label
+var _prep_pending := false
 
 func _ready() -> void:
 	if not Game.initialized:
@@ -214,6 +220,41 @@ func _build_ui() -> void:
 	_decision_dialog.confirmed.connect(func(): _on_decision(0))
 	_decision_dialog.canceled.connect(func(): _on_decision(1))
 	add_child(_decision_dialog)
+
+	# Spielvorbereitung: Matchplan-Wahl am Tag vor dem Spiel
+	_prep_dialog = AcceptDialog.new()
+	_prep_dialog.title = "Spielvorbereitung"
+	_prep_dialog.ok_button_text = "Einstudieren"
+	_prep_dialog.min_size = Vector2i(640, 300)
+	var prep_box := VBoxContainer.new()
+	prep_box.add_theme_constant_override("separation", 10)
+	_prep_dialog.add_child(prep_box)
+	_prep_opponent = Label.new()
+	_prep_opponent.add_theme_font_size_override("font_size", 18)
+	_prep_opponent.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	prep_box.add_child(_prep_opponent)
+	var prep_row := HBoxContainer.new()
+	prep_row.add_theme_constant_override("separation", 10)
+	prep_box.add_child(prep_row)
+	var prep_label := Label.new()
+	prep_label.text = "Matchplan:"
+	prep_row.add_child(prep_label)
+	_prep_select = OptionButton.new()
+	for plan in Game.MATCH_PLANS:
+		_prep_select.add_item(plan)
+	_prep_select.item_selected.connect(func(index: int):
+		_prep_desc.text = Game.MATCH_PLANS[_prep_select.get_item_text(index)].desc)
+	prep_row.add_child(_prep_select)
+	_prep_desc = Label.new()
+	_prep_desc.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	_prep_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	prep_box.add_child(_prep_desc)
+	_prep_hint = Label.new()
+	_prep_hint.add_theme_color_override("font_color", UITheme.WARN)
+	_prep_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	prep_box.add_child(_prep_hint)
+	_prep_dialog.confirmed.connect(_on_prep_confirmed)
+	add_child(_prep_dialog)
 
 	_build_sim_overlay()
 
@@ -402,6 +443,7 @@ func _sim_tick() -> void:
 	update_topbar()
 	if not r.decision.is_empty():
 		_sim_timer.stop()
+		_prep_pending = r.get("prep", false)
 		_pending_decision = r.decision
 		_decision_dialog.title = r.decision.title
 		_decision_dialog.dialog_text = r.decision.text + "\n"
@@ -409,8 +451,45 @@ func _sim_tick() -> void:
 		_decision_dialog.cancel_button_text = r.decision.options[1]
 		_decision_dialog.popup_centered()
 		return
+	if r.get("prep", false):
+		_sim_timer.stop()
+		_show_prep_dialog()
+		return
 	if Game.is_matchday_today():
 		_finish_sim()
+
+## Spielvorbereitung: Gegner-Info anzeigen und Matchplan wählen lassen.
+func _show_prep_dialog() -> void:
+	var f := Game.next_fixture(Game.my_club_id)
+	if f.is_empty():
+		_sim_timer.start()
+		return
+	var home := int(f.home) == Game.my_club_id
+	var opponent := Game.club(int(f.away) if home else int(f.home))
+	_prep_opponent.text = "Morgen ist Spieltag: %s gegen %s (Platz %d, Stärke ~%d).\nWas soll die Mannschaft heute einstudieren?" % [
+		"HEIM" if home else "AUSWÄRTS", opponent.name,
+		Game.league(opponent.league_id).position_of(opponent.id), opponent.base_strength]
+	var diff := opponent.base_strength - Game.my_club().base_strength
+	if diff >= 4:
+		_prep_hint.text = "Empfehlung: „Konter“ oder „Defensivriegel“ – der Gegner ist deutlich stärker."
+	elif diff <= -4:
+		_prep_hint.text = "Empfehlung: „Offensivpressing“ – der Gegner ist deutlich schwächer."
+	else:
+		_prep_hint.text = "Empfehlung: „Mittelfeldkontrolle“ – ein Duell auf Augenhöhe."
+	for i in _prep_select.item_count:
+		if _prep_select.get_item_text(i) == Game.match_plan:
+			_prep_select.select(i)
+			break
+	_prep_desc.text = Game.MATCH_PLANS[Game.match_plan].desc
+	_prep_dialog.popup_centered()
+
+func _on_prep_confirmed() -> void:
+	Game.match_plan = _prep_select.get_item_text(_prep_select.selected)
+	var entry := Game.note_prep()
+	_sim_feed.add_item("%s  –  %s" % [entry.day, entry.text])
+	_refresh_active_screen()
+	if _sim_overlay.visible:
+		_sim_timer.start()
 
 func _on_decision(choice: int) -> void:
 	if _pending_decision.is_empty():
@@ -420,6 +499,10 @@ func _on_decision(choice: int) -> void:
 	if not result.is_empty():
 		_sim_feed.add_item("%s  –  %s" % [result.day, result.text])
 	update_topbar()
+	if _prep_pending:
+		_prep_pending = false
+		_show_prep_dialog()
+		return
 	if _sim_overlay.visible:
 		_sim_timer.start()
 

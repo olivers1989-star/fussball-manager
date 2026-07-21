@@ -102,6 +102,7 @@ func tick() -> void:
 	elif _rng.randf() < 0.0009:
 		_penalty(false, rat_h)
 
+	_flow_commentary(rat_h, rat_a)
 	_maybe_card()
 
 	if minute >= 90:
@@ -260,6 +261,39 @@ func _penalty(for_home: bool, opp: Dictionary) -> void:
 	else:
 		_note_adj[taker.id] = _note_adj.get(taker.id, 0.0) + 0.5
 		_emit("chance", "Der Torwart ahnt die Ecke – %s scheitert vom Punkt!" % taker.full_name())
+
+## Laufender Spielkommentar: hält den Ticker lebendig, ohne Tore zu übertönen.
+func _flow_commentary(rat_h: Dictionary, rat_a: Dictionary) -> void:
+	if _rng.randf() >= 0.17:
+		return
+	var home_edge: float = rat_h.mid / (rat_h.mid + rat_a.mid)
+	var attacking_home := _rng.randf() < home_edge
+	var club: ClubData = home if attacking_home else away
+	var lineup: Array = lineup_h if attacking_home else lineup_a
+	var p: PlayerData = players[lineup[_rng.randi_range(1, lineup.size() - 1)]]
+	var trailing: bool = (hg < ag) if attacking_home else (ag < hg)
+	var pool: Array
+	if trailing and minute > 60:
+		pool = [
+			"%s wirft jetzt alles nach vorn!" % club.name,
+			"%s treibt seine Mitspieler mit wilden Gesten an." % p.full_name(),
+			"Druckphase von %s – der Gegner steht ganz tief." % club.short_name,
+			"Die Fans von %s peitschen ihre Mannschaft nach vorn." % club.short_name,
+		]
+	else:
+		pool = [
+			"%s kombiniert sich gefällig durchs Mittelfeld." % club.name,
+			"%s setzt sich über die Außenbahn durch, aber die Hereingabe wird geklärt." % p.full_name(),
+			"Weitschuss von %s – sichere Beute für den Torwart." % p.full_name(),
+			"%s gewinnt einen wichtigen Zweikampf im Zentrum." % p.full_name(),
+			"Abseits! %s ist einen Schritt zu früh gestartet." % p.full_name(),
+			"Viel Kampf, wenig Räume – %s beißt sich im Mittelfeld fest." % club.short_name,
+			"Ecke für %s – die kurze Variante verpufft." % club.short_name,
+			"%s foult im Mittelfeld – der Freistoß bringt nichts ein." % p.full_name(),
+			"%s schaltet schnell um, doch der Pass in die Tiefe ist zu lang." % club.short_name,
+			"Kopfballduell im Mittelfeld – %s behauptet den Ball." % p.full_name(),
+		]
+	_emit("flow", pool.pick_random())
 
 func _goal(for_home: bool, club: ClubData, scorer: PlayerData, template: String) -> void:
 	scorer.goals_season += 1

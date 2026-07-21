@@ -227,14 +227,17 @@ func advance_day() -> Dictionary:
 	world.date = date_unix() + DAY
 	_daily_recovery()
 	var result := _daily_events()
-	# Spielvorbereitung: der Tag vor dem Spieltag gehört dem Matchplan
-	if days_until_matchday() == 1 and not season_over():
-		var f := next_fixture(my_club_id)
-		if not f.is_empty():
-			var home := int(f.home) == my_club_id
-			var opponent := club(int(f.away) if home else int(f.home))
-			result.news.append(_add_news("training", "Spielvorbereitung auf %s: Matchplan „%s“ wird einstudiert." % [opponent.name, match_plan]))
+	# Spielvorbereitung: der Tag vor dem Spieltag gehört dem Matchplan (Popup im Hub)
+	result["prep"] = days_until_matchday() == 1 and not season_over()
 	return result
+
+## Meldung nach der Matchplan-Wahl in der Spielvorbereitung.
+func note_prep() -> Dictionary:
+	var opponent_name := "den Gegner"
+	var f := next_fixture(my_club_id)
+	if not f.is_empty():
+		opponent_name = club(int(f.away) if int(f.home) == my_club_id else int(f.home)).name
+	return _add_news("training", "Spielvorbereitung auf %s: Matchplan „%s“ einstudiert." % [opponent_name, match_plan])
 
 ## Tage bis zum Spieltag durchlaufen (Tests/Schnellsimulation).
 ## Entscheidungen werden dabei automatisch abgelehnt.
@@ -245,6 +248,8 @@ func advance_to_matchday() -> Array:
 		collected.append_array(r.news)
 		if not r.decision.is_empty():
 			collected.append(resolve_decision(r.decision, 1))
+		if r.get("prep", false):
+			collected.append(note_prep())
 	return collected
 
 func _add_news(kind: String, text: String) -> Dictionary:

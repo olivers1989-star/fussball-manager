@@ -38,14 +38,15 @@ func _ready() -> void:
 	assert(world.clubs.size() == 36)
 	assert(Game.league(1).fixtures.size() == 306)
 
-	# Kalender: Saison startet am 1. August, Spieltage samstags, Winterpause vorhanden
-	assert(Game.date_dict().month == 8 and Game.date_dict().day == 1)
+	# Kalender: Saison startet am 10. Juli (4 Wochen Vorbereitung), Spieltage samstags, Winterpause
+	assert(Game.date_dict().month == 7 and Game.date_dict().day == 10)
+	assert(Game.matchday_date(0) - Game.date_unix() >= 27 * 86400)
 	assert(Game.world.matchday_dates.size() == 34)
 	assert(Time.get_datetime_dict_from_unix_time(Game.matchday_date(0)).weekday == Time.WEEKDAY_SATURDAY)
 	assert(Game.matchday_date(17) - Game.matchday_date(16) > 30 * 86400)
 	assert(Time.get_datetime_dict_from_unix_time(Game.matchday_date(17)).month == 2)
 	Game.advance_day()
-	assert(Game.date_dict().day == 2)
+	assert(Game.date_dict().day == 11)
 
 	var total_goals := 0
 	var total_matches := 0
