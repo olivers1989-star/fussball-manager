@@ -33,8 +33,14 @@ var _sim_close_button: Button
 var _sim_match_button: Button
 var _decision_dialog: ConfirmationDialog
 var _pending_decision := {}
-var _prep_dialog: AcceptDialog
-var _prep_opponent: Label
+var _prep_overlay: Control
+var _prep_title: Label
+var _prep_opp_slot: HBoxContainer
+var _prep_opp_badge: Label
+var _prep_opp_name: Label
+var _prep_opp_sub: Label
+var _prep_form_row: HBoxContainer
+var _prep_details := {}
 var _prep_select: OptionButton
 var _prep_desc: Label
 var _prep_hint: Label
@@ -221,40 +227,7 @@ func _build_ui() -> void:
 	_decision_dialog.canceled.connect(func(): _on_decision(1))
 	add_child(_decision_dialog)
 
-	# Spielvorbereitung: Matchplan-Wahl am Tag vor dem Spiel
-	_prep_dialog = AcceptDialog.new()
-	_prep_dialog.title = "Spielvorbereitung"
-	_prep_dialog.ok_button_text = "Einstudieren"
-	_prep_dialog.min_size = Vector2i(640, 300)
-	var prep_box := VBoxContainer.new()
-	prep_box.add_theme_constant_override("separation", 10)
-	_prep_dialog.add_child(prep_box)
-	_prep_opponent = Label.new()
-	_prep_opponent.add_theme_font_size_override("font_size", 18)
-	_prep_opponent.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	prep_box.add_child(_prep_opponent)
-	var prep_row := HBoxContainer.new()
-	prep_row.add_theme_constant_override("separation", 10)
-	prep_box.add_child(prep_row)
-	var prep_label := Label.new()
-	prep_label.text = "Matchplan:"
-	prep_row.add_child(prep_label)
-	_prep_select = OptionButton.new()
-	for plan in Game.MATCH_PLANS:
-		_prep_select.add_item(plan)
-	_prep_select.item_selected.connect(func(index: int):
-		_prep_desc.text = Game.MATCH_PLANS[_prep_select.get_item_text(index)].desc)
-	prep_row.add_child(_prep_select)
-	_prep_desc = Label.new()
-	_prep_desc.add_theme_color_override("font_color", UITheme.TEXT_DIM)
-	_prep_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	prep_box.add_child(_prep_desc)
-	_prep_hint = Label.new()
-	_prep_hint.add_theme_color_override("font_color", UITheme.WARN)
-	_prep_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	prep_box.add_child(_prep_hint)
-	_prep_dialog.confirmed.connect(_on_prep_confirmed)
-	add_child(_prep_dialog)
+	_build_prep_overlay()
 
 	_build_sim_overlay()
 
@@ -458,7 +431,108 @@ func _sim_tick() -> void:
 	if Game.is_matchday_today():
 		_finish_sim()
 
-## Spielvorbereitung: Gegner-Info anzeigen und Matchplan wählen lassen.
+## Spielvorbereitungs-Overlay: kompakte Karte mit Gegner-Details und Matchplan-Wahl.
+func _build_prep_overlay() -> void:
+	_prep_overlay = Control.new()
+	_prep_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_prep_overlay.visible = false
+	add_child(_prep_overlay)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.7)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_prep_overlay.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_prep_overlay.add_child(center)
+	var card := UITheme.card()
+	card.custom_minimum_size = Vector2(760, 0)
+	center.add_child(card)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	card.add_child(box)
+
+	_prep_title = Label.new()
+	_prep_title.add_theme_font_size_override("font_size", 24)
+	_prep_title.add_theme_color_override("font_color", UITheme.ACCENT)
+	box.add_child(_prep_title)
+
+	# Gegner-Karte
+	var opp_panel := PanelContainer.new()
+	opp_panel.add_theme_stylebox_override("panel", UITheme.box(UITheme.FIELD, 10, UITheme.BORDER, 14))
+	box.add_child(opp_panel)
+	var opp_box := VBoxContainer.new()
+	opp_box.add_theme_constant_override("separation", 8)
+	opp_panel.add_child(opp_box)
+	_prep_opp_slot = HBoxContainer.new()
+	_prep_opp_slot.add_theme_constant_override("separation", 12)
+	opp_box.add_child(_prep_opp_slot)
+	var opp_text := VBoxContainer.new()
+	opp_text.add_theme_constant_override("separation", 0)
+	opp_text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	opp_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_prep_opp_slot.add_child(opp_text)
+	_prep_opp_name = Label.new()
+	_prep_opp_name.add_theme_font_size_override("font_size", 22)
+	opp_text.add_child(_prep_opp_name)
+	_prep_opp_sub = Label.new()
+	_prep_opp_sub.add_theme_font_size_override("font_size", 14)
+	_prep_opp_sub.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	opp_text.add_child(_prep_opp_sub)
+	_prep_form_row = HBoxContainer.new()
+	_prep_form_row.add_theme_constant_override("separation", 4)
+	_prep_form_row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_prep_opp_slot.add_child(_prep_form_row)
+
+	var detail_grid := GridContainer.new()
+	detail_grid.columns = 2
+	detail_grid.add_theme_constant_override("h_separation", 20)
+	detail_grid.add_theme_constant_override("v_separation", 4)
+	opp_box.add_child(detail_grid)
+	for entry in [["strength", "Teamstärke"], ["scorer", "Gefährlichster Spieler"], ["stadium", "Spielstätte"]]:
+		var key := Label.new()
+		key.text = entry[1] + ":"
+		key.add_theme_font_size_override("font_size", 14)
+		key.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		detail_grid.add_child(key)
+		var value := Label.new()
+		value.add_theme_font_size_override("font_size", 15)
+		detail_grid.add_child(value)
+		_prep_details[entry[0]] = value
+
+	_prep_hint = Label.new()
+	_prep_hint.add_theme_color_override("font_color", UITheme.WARN)
+	_prep_hint.add_theme_font_size_override("font_size", 15)
+	box.add_child(_prep_hint)
+
+	var plan_row := HBoxContainer.new()
+	plan_row.add_theme_constant_override("separation", 10)
+	box.add_child(plan_row)
+	var plan_label := Label.new()
+	plan_label.text = "Matchplan:"
+	plan_label.add_theme_font_size_override("font_size", 18)
+	plan_row.add_child(plan_label)
+	_prep_select = OptionButton.new()
+	for plan in Game.MATCH_PLANS:
+		_prep_select.add_item(plan)
+	_prep_select.item_selected.connect(func(index: int):
+		_prep_desc.text = Game.MATCH_PLANS[_prep_select.get_item_text(index)].desc)
+	plan_row.add_child(_prep_select)
+	_prep_desc = Label.new()
+	_prep_desc.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	_prep_desc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	plan_row.add_child(_prep_desc)
+
+	var confirm_row := HBoxContainer.new()
+	confirm_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(confirm_row)
+	var confirm := Button.new()
+	confirm.text = "✔  Einstudieren & weiter"
+	confirm.custom_minimum_size = Vector2(280, 50)
+	confirm.add_theme_font_size_override("font_size", 19)
+	UITheme.make_primary(confirm)
+	confirm.pressed.connect(_on_prep_confirmed)
+	confirm_row.add_child(confirm)
+
 func _show_prep_dialog() -> void:
 	var f := Game.next_fixture(Game.my_club_id)
 	if f.is_empty():
@@ -466,9 +540,53 @@ func _show_prep_dialog() -> void:
 		return
 	var home := int(f.home) == Game.my_club_id
 	var opponent := Game.club(int(f.away) if home else int(f.home))
-	_prep_opponent.text = "Morgen ist Spieltag: %s gegen %s (Platz %d, Stärke ~%d).\nWas soll die Mannschaft heute einstudieren?" % [
-		"HEIM" if home else "AUSWÄRTS", opponent.name,
-		Game.league(opponent.league_id).position_of(opponent.id), opponent.base_strength]
+	var lg := Game.league(opponent.league_id)
+	var table_row := {}
+	for row in lg.table():
+		if int(row.club_id) == opponent.id:
+			table_row = row
+			break
+
+	_prep_title.text = "Spielvorbereitung – morgen ist Spieltag!"
+	if is_instance_valid(_prep_opp_badge):
+		_prep_opp_slot.remove_child(_prep_opp_badge)
+		_prep_opp_badge.free()
+	_prep_opp_badge = UITheme.club_badge(opponent.short_name, Color(opponent.color), 54)
+	_prep_opp_slot.add_child(_prep_opp_badge)
+	_prep_opp_slot.move_child(_prep_opp_badge, 0)
+	_prep_opp_name.text = "%s gegen %s" % ["HEIM" if home else "AUSWÄRTS", opponent.name]
+	_prep_opp_sub.text = "Platz %d · %d Punkte · %d:%d Tore" % [
+		lg.position_of(opponent.id), int(table_row.get("points", 0)),
+		int(table_row.get("gf", 0)), int(table_row.get("ga", 0))]
+
+	# Formkurve des Gegners (letzte 5)
+	while _prep_form_row.get_child_count() > 0:
+		var child := _prep_form_row.get_child(0)
+		_prep_form_row.remove_child(child)
+		child.free()
+	var recent := lg.fixtures_of_club(opponent.id).filter(func(x): return x.played)
+	var last5 := recent.slice(maxi(0, recent.size() - 5))
+	if last5.is_empty():
+		_prep_form_row.add_child(UITheme.mini_pill("Noch keine Spiele", UITheme.SURFACE2, UITheme.TEXT_DIM, 110))
+	for x in last5:
+		var opp_home: bool = int(x.home) == opponent.id
+		var gf: int = int(x.hg) if opp_home else int(x.ag)
+		var ga: int = int(x.ag) if opp_home else int(x.hg)
+		if gf > ga:
+			_prep_form_row.add_child(UITheme.mini_pill("S", Color("#166534")))
+		elif gf == ga:
+			_prep_form_row.add_child(UITheme.mini_pill("U", Color("#475569")))
+		else:
+			_prep_form_row.add_child(UITheme.mini_pill("N", Color("#7f1d1d")))
+
+	_prep_details.strength.text = "~%d  (deine Elf: ~%.0f)" % [opponent.base_strength, Game.my_club().squad_strength(Game.world.players)]
+	var opp_squad := opponent.players(Game.world.players)
+	opp_squad.sort_custom(func(a, b): return a.goals_season > b.goals_season)
+	if not opp_squad.is_empty():
+		var danger: PlayerData = opp_squad[0]
+		_prep_details.scorer.text = "%s (%s, %d Tore, Stärke %d)" % [danger.full_name(), danger.pos, danger.goals_season, danger.strength]
+	_prep_details.stadium.text = Game.my_club().stadium if home else opponent.stadium
+
 	var diff := opponent.base_strength - Game.my_club().base_strength
 	if diff >= 4:
 		_prep_hint.text = "Empfehlung: „Konter“ oder „Defensivriegel“ – der Gegner ist deutlich stärker."
@@ -481,9 +599,10 @@ func _show_prep_dialog() -> void:
 			_prep_select.select(i)
 			break
 	_prep_desc.text = Game.MATCH_PLANS[Game.match_plan].desc
-	_prep_dialog.popup_centered()
+	_prep_overlay.visible = true
 
 func _on_prep_confirmed() -> void:
+	_prep_overlay.visible = false
 	Game.match_plan = _prep_select.get_item_text(_prep_select.selected)
 	var entry := Game.note_prep()
 	_sim_feed.add_item("%s  –  %s" % [entry.day, entry.text])
