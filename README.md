@@ -24,9 +24,9 @@ Die Godot-Engine liegt unter `C:\Tools\Godot`.
 - **Sperren**: jede 5. Gelbe Karte = 1 Spieltag, Rote Karte = 2 Spieltage (der Spieler fliegt sofort vom Platz)
 - **Training**: Wochenschwerpunkt wählbar (Ausgewogen / Kondition / Regeneration / Leistung) mit echten Effekten auf Frische, Form, Ausdauer und die Entwicklung junger Spieler – inkl. Fitness-Übersicht des Kaders
 - Aufstellung & Taktik: 5 Formationen, Startelf/Bank-Verwaltung, „Beste Elf"-Automatik
-- Transfermarkt: Spieler kaufen und verkaufen
-- Finanzen: Budget, Ticketeinnahmen, Sponsor, Gehälter, Buchungshistorie
-- Saisonwechsel: Meister, Auf-/Absteiger, Spieleralterung & -entwicklung, Karriereenden, Jugendspieler rücken nach
+- Transfermarkt: Spieler kaufen und verkaufen, mit **realistischen Marktwerten** (Zweitliga-Stammspieler unter 1 Mio, Bundesliga-Stammspieler 5–12 Mio, Weltklasse 80–150 Mio – getrieben von Stärke, Alter, Potenzial und Saisonleistung)
+- Finanzen: Budget, Ticketeinnahmen, Sponsor-/TV-Gelder und Gehälter auf realistischer Skala (abgeleitet vom tatsächlichen Kader), Buchungshistorie
+- Saisonwechsel: Meister, Auf-/Absteiger, Spieleralterung & -entwicklung, **individuelle Karriereenden** (Feldspieler meist 33–37, Torhüter bis ~40, Stars länger, Ausgelaugte früher) mit dauerhaftem Archiv im Spielstand, Jugendspieler rücken sichtbar nach (News + Saisonbilanz)
 - Speichern & Laden (JSON-Spielstände unter `%APPDATA%\Godot\app_userdata\Fussball Manager\saves`)
 
 ## Design

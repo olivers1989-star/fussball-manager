@@ -178,9 +178,9 @@ func develop_by_strength(delta: float) -> void:
 		recompute_strength()
 		guard += 1
 
-## Marktgerechtes Monatsgehalt: ca. 2,5 % des Marktwerts.
+## Marktgerechtes Monatsgehalt: Jahresgehalt ≈ 20 % des Marktwerts.
 func expected_salary() -> int:
-	return maxi(int(market_value() / 40.0 / 1000.0) * 1000, 3000)
+	return maxi(int(market_value() / 60.0 / 1000.0) * 1000, 3000)
 
 ## Erzeugt ein Attributset um einen Zielwert herum, geprägt vom Positionsprofil.
 static func make_attributes(p_pos: String, target: int) -> Dictionary:
@@ -235,19 +235,29 @@ func condition_factor() -> float:
 func effective_rating() -> float:
 	return rating() * condition_factor()
 
+## Marktwert in Euro auf realistischer Skala: Zweitliga-Stammspieler unter 1 Mio,
+## Bundesliga-Stammspieler 5–12 Mio, Weltklasse 80–150 Mio.
+## Treiber: Stärke (exponentiell), Alter, Potenzial (bei Jungen) und Saisonleistung.
 func market_value() -> int:
-	var base := 50000.0 * pow(1.135, strength - 50)
-	var age_factor := 0.6
+	var base := 150000.0 * pow(1.176, strength - 50)
+	var factor := 0.55
 	if age <= 21:
-		age_factor = 1.3
+		factor = 1.35
+	elif age <= 24:
+		factor = 1.25
 	elif age <= 28:
-		age_factor = 1.2
+		factor = 1.15
 	elif age <= 31:
-		age_factor = 0.9
-	# Junges Toptalent kostet Aufpreis, geringes Talent drückt den Preis
-	if age <= 23:
-		age_factor *= 0.8 + talent * 0.1
-	return maxi(int(round(base * age_factor / 1000.0)) * 1000, 25000)
+		factor = 0.85
+	# Junge Spieler mit Luft nach oben kosten deutlichen Aufpreis
+	if age <= 23 and potential > strength:
+		factor *= 1.0 + minf((potential - strength) * 0.05, 1.2)
+	# Laufende Saison: Torgefahr und starke Noten treiben den Preis
+	if goals_season >= 10:
+		factor *= 1.0 + minf((goals_season - 9) * 0.03, 0.4)
+	if matches_season >= 10 and avg_rating() < 3.0:
+		factor *= 1.15
+	return clampi(int(round(base * factor / 1000.0)) * 1000, 25000, 250000000)
 
 func reset_season_stats() -> void:
 	goals_season = 0

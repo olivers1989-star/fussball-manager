@@ -506,9 +506,8 @@ func _apply_matchday_finances() -> void:
 		var f := lg.fixture_of(cid, matchday())
 		var ticket := 0
 		if not f.is_empty() and int(f.home) == cid:
-			var price := 28 if lg.tier == 1 else 16
-			var fill := clampf(0.45 + (c.base_strength - 55) * 0.008 + randf() * 0.2, 0.3, 1.0)
-			ticket = int(c.capacity * fill) * price
+			var fill := clampf(c.expected_fill() + randf_range(-0.1, 0.1), 0.3, 1.0)
+			ticket = int(c.capacity * fill) * c.ticket_price()
 		var salaries := c.salaries_per_matchday(world.players)
 		c.budget += ticket + c.sponsor_per_md - salaries
 		if cid == my_club_id:
@@ -609,31 +608,47 @@ func end_season() -> Dictionary:
 		p.last_rating = 0.0
 		if p.age >= 31:
 			p.stamina = clampi(p.stamina - randi_range(1, 4), 30, 95)
-		if p.age >= 34 and randf() < 0.45:
+		if randf() < _retire_chance(p):
 			retiring.append(pid)
 		elif p.contract_years <= 0:
 			# Automatische Verlängerung (KI wie Spieler) – Vertragsverhandlungen kommen in einer späteren Ausbaustufe
 			p.contract_years = randi_range(2, 3)
 			p.salary = p.expected_salary()
 
+	summary["retired_notable"] = []
 	for pid in retiring:
 		var p: PlayerData = world.players[pid]
 		if p.club_id == my_club_id:
-			summary.retired.append(p.full_name())
+			summary.retired.append("%s (%d J.)" % [p.full_name(), p.age])
+		# Ins Karriereenden-Archiv statt ins Nichts – Grundlage für spätere Rekordlisten
+		world.retired.append({
+			"name": p.full_name(), "pos": p.pos, "age": p.age, "talent": p.talent,
+			"club": club(p.club_id).name, "strength": p.strength, "season": season_label(),
+		})
+		if p.strength >= 74 and p.club_id != my_club_id:
+			summary.retired_notable.append("%s (%s, %d J., Stärke %d)" % [p.full_name(), club(p.club_id).short_name, p.age, p.strength])
+		if p.strength >= 74 or p.club_id == my_club_id:
+			_add_news("retirement", "Karriereende: %s (%s) tritt mit %d Jahren ab." % [p.full_name(), club(p.club_id).name, p.age])
 		club(p.club_id).player_ids.erase(pid)
 		club(p.club_id).lineup.erase(pid)
 		world.players.erase(pid)
 
-	# Kader mit Jugendspielern auffüllen
+	# Kader mit Jugendspielern auffüllen – der Nachwuchs rückt sichtbar nach
 	var min_per_pos := {"TW": 2, "IV": 3, "LV": 1, "RV": 1, "DM": 2, "ZM": 2, "LM": 1, "RM": 1, "OM": 1, "LA": 1, "RA": 1, "MS": 2}
+	summary["new_youth"] = []
 	for cid in world.clubs:
 		var c: ClubData = world.clubs[cid]
 		# Fähigkeit "Jugendarbeit": der eigene Nachwuchs kommt stärker aus der Akademie
 		var youth_bonus: int = (skill("jugend") >> 1) if cid == my_club_id else 0
 		for pos in min_per_pos:
 			while c.players_by_pos(world.players, pos).size() < min_per_pos[pos]:
-				Data.create_youth_player(world, c, pos, youth_bonus)
+				var yp := Data.create_youth_player(world, c, pos, youth_bonus)
+				if cid == my_club_id:
+					summary.new_youth.append("%s (%s, %d J., Talent %s)" % [yp.full_name(), yp.pos, yp.age, yp.talent_stars()])
+					_add_news("youth", "Aus der eigenen Jugend: %s (%s, %d J.) rückt in den Profikader auf." % [yp.full_name(), yp.pos, yp.age])
 		c.lineup = c.best_eleven(world.players)
+		# Sponsor-/TV-Verträge an die neue Liga und den aktuellen Kader anpassen
+		c.refresh_sponsor(world.players)
 
 	# Neue Saison
 	l1.fixtures = ScheduleGen.build_fixtures(l1.club_ids)
@@ -643,6 +658,26 @@ func end_season() -> Dictionary:
 	world.date = ScheduleGen.season_start(int(world.season_year))
 	world.matchday_dates = ScheduleGen.matchday_dates(int(world.season_year))
 	return summary
+
+## Karriereende individuell statt Stichtag: Feldspieler hören meist mit 33–37 auf,
+## Torhüter deutlich später (bis ~40), Stars hängen gern noch Jahre dran,
+## schwache oder ausgelaugte Spieler gehen früher (ab 31 möglich).
+func _retire_chance(p: PlayerData) -> float:
+	if p.age >= 40:
+		return 1.0
+	var eff_age := p.age - (3 if p.pos == "TW" else 0)
+	if eff_age < 31:
+		return 0.0
+	var chance := (eff_age - 30) * 0.09
+	if p.strength >= 78:
+		chance *= 0.5
+	elif p.strength < 55:
+		chance *= 1.5
+	if p.stamina <= 45:
+		chance *= 1.4
+	if p.attr("robust") < 40:
+		chance *= 1.25
+	return clampf(chance, 0.0, 0.9)
 
 ## Saison-Entwicklung in Stärkepunkten: steile Jugendkurve (ab 14!), Talent,
 ## Einsatzzeit (ab 18) bzw. Akademie-Training (bis 17), Noten, Entschlossenheit –
@@ -856,8 +891,22 @@ func load_game(path: String) -> bool:
 	transactions = data.get("transactions", [])
 	news = data.get("news", [])
 	world = _world_from_dict(data.world)
+	if not data.world.has("retired"):
+		_migrate_economy_v012()
 	initialized = true
 	return true
+
+## Migration für Spielstände vor v0.12.0 (erkennbar am fehlenden Karriereenden-
+## Archiv): Die Marktwert-Skala wurde ver-zehnfacht, also Gehälter, Sponsorgelder
+## und Budgets auf die neue Ökonomie heben – sonst wäre jeder Verein sofort pleite.
+func _migrate_economy_v012() -> void:
+	for pid in world.players:
+		var p: PlayerData = world.players[pid]
+		p.salary = p.expected_salary()
+	for cid in world.clubs:
+		var c: ClubData = world.clubs[cid]
+		c.refresh_sponsor(world.players)
+		c.budget = maxi(c.budget, int(c.salaries_per_matchday(world.players) * 34 * 0.35))
 
 func _world_to_dict() -> Dictionary:
 	var players := {}
@@ -878,6 +927,7 @@ func _world_to_dict() -> Dictionary:
 		"players": players,
 		"clubs": clubs,
 		"leagues": leagues,
+		"retired": world.get("retired", []),
 	}
 
 func _world_from_dict(d: Dictionary) -> Dictionary:
@@ -890,6 +940,7 @@ func _world_from_dict(d: Dictionary) -> Dictionary:
 		"players": {},
 		"clubs": {},
 		"leagues": {},
+		"retired": d.get("retired", []),
 	}
 	for t in d.get("matchday_dates", []):
 		w.matchday_dates.append(int(t))

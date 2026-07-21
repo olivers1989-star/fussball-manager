@@ -55,6 +55,7 @@ func generate_world() -> Dictionary:
 	# (editierbar in data/players.json). Nur Jugendspieler werden zufällig erzeugt.
 	var db_players := _load_players_db()
 	world["youth_ids"] = []
+	world["retired"] = []   # Karriereenden-Archiv (bleibt im Spielstand erhalten)
 
 	for i in club_defs.size():
 		var def: Dictionary = club_defs[i]
@@ -68,12 +69,7 @@ func generate_world() -> Dictionary:
 		c.color = def.color
 		c.base_strength = int(def.strength)
 		c.league_id = int(def.league)
-		if c.league_id == 1:
-			c.budget = (c.base_strength - 50) * 1200000
-		else:
-			c.budget = (c.base_strength - 44) * 400000
 		c.sponsor_name = sponsor_pool[i % sponsor_pool.size()]
-		c.sponsor_per_md = maxi((c.base_strength - 40) * 4000, 20000)
 		c.chairman = def.get("chairman", "")
 		world.clubs[c.id] = c
 		world.leagues[c.league_id].club_ids.append(c.id)
@@ -86,6 +82,10 @@ func generate_world() -> Dictionary:
 		for youth_no in 3:
 			world.youth_ids.append(create_youth_player(world, c, PlayerData.POSITIONS.pick_random()).id)
 		c.lineup = c.best_eleven(world.players)
+		# Finanzen aus dem tatsächlichen Kader ableiten: Sponsor/TV decken die
+		# Gehälter plus Spielraum, das Transferbudget entspricht ~35 % des Jahresetats
+		c.refresh_sponsor(world.players)
+		c.budget = maxi(int(c.salaries_per_matchday(world.players) * 34 * 0.35), 500000)
 
 	l1.fixtures = ScheduleGen.build_fixtures(l1.club_ids)
 	l2.fixtures = ScheduleGen.build_fixtures(l2.club_ids)

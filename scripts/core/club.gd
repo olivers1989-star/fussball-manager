@@ -116,6 +116,20 @@ func salaries_per_matchday(all_players: Dictionary) -> int:
 	# Saison = 34 Spieltage über ~12 Monate verteilt
 	return int(salaries_per_month(all_players) * 12.0 / 34.0)
 
+func ticket_price() -> int:
+	return 35 if league_id == 1 else 20
+
+## Erwartete Stadionauslastung (ohne Tagesschwankung).
+func expected_fill() -> float:
+	return clampf(0.55 + (base_strength - 55) * 0.008, 0.3, 1.0)
+
+## Sponsor- und TV-Gelder pro Spieltag, abgeleitet vom tatsächlichen Gehaltsetat:
+## Einnahmen decken die Gehälter plus ~10 % Spielraum, abzüglich der erwarteten
+## Ticketeinnahmen. Große Kader = große Vermarktung – skaliert automatisch mit.
+func refresh_sponsor(all_players: Dictionary) -> void:
+	var ticket_avg := int(capacity * expected_fill() * ticket_price() / 2.0)
+	sponsor_per_md = maxi(int(salaries_per_matchday(all_players) * 1.1) - ticket_avg, 25000)
+
 ## Gesamtstärke des Vereins: Durchschnitt über ALLE Kaderspieler
 ## (nicht nur die aktuelle Spieltagself).
 func overall_strength(all_players: Dictionary) -> float:

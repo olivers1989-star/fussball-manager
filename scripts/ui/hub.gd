@@ -732,5 +732,17 @@ func _show_season_end() -> void:
 	if not s.retired.is_empty():
 		lines.append("")
 		lines.append("Karriereende bei deinem Verein: %s" % ", ".join(s.retired))
+	var notable: Array = s.get("retired_notable", [])
+	if not notable.is_empty():
+		lines.append("")
+		lines.append("Prominente Rücktritte im Fußball:")
+		for i in mini(5, notable.size()):
+			lines.append("  • %s" % notable[i])
+	var youth: Array = s.get("new_youth", [])
+	if not youth.is_empty():
+		lines.append("")
+		lines.append("Aus deiner Jugend rücken auf:")
+		for entry in youth:
+			lines.append("  • %s" % entry)
 	_season_dialog.dialog_text = "\n".join(lines)
 	_season_dialog.popup_centered()
