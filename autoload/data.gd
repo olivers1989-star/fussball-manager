@@ -81,7 +81,7 @@ func generate_world() -> Dictionary:
 
 ## Erzeugt einen kompletten Kader für einen Verein (24 Spieler über alle Positionen).
 func _generate_squad(world: Dictionary, club: ClubData) -> void:
-	var plan := {"TW": 3, "IV": 4, "LV": 2, "RV": 2, "DM": 3, "ZM": 3, "OM": 2, "LA": 1, "RA": 1, "MS": 3}
+	var plan := {"TW": 3, "IV": 4, "LV": 2, "RV": 2, "DM": 2, "ZM": 3, "LM": 1, "RM": 1, "OM": 2, "LA": 1, "RA": 1, "MS": 3}
 	var star_given := false
 	for pos in plan:
 		for i in plan[pos]:

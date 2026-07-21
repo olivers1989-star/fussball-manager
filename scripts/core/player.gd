@@ -4,15 +4,17 @@ extends RefCounted
 
 ## Detaillierte Positionen. Für Spielmechanik (Engine, Wechselregeln) zählt die
 ## Positionsgruppe (TW/AB/MF/ST), fürs Profil und die Aufstellung die genaue Position.
-const POSITIONS := ["TW", "LV", "IV", "RV", "DM", "ZM", "OM", "LA", "RA", "MS"]
+const POSITIONS := ["TW", "LV", "IV", "RV", "DM", "ZM", "LM", "RM", "OM", "LA", "RA", "MS"]
 const POSITION_NAMES := {
 	"TW": "Torwart", "LV": "Linker Verteidiger", "IV": "Innenverteidiger",
 	"RV": "Rechter Verteidiger", "DM": "Defensives Mittelfeld", "ZM": "Zentrales Mittelfeld",
+	"LM": "Linkes Mittelfeld", "RM": "Rechtes Mittelfeld",
 	"OM": "Offensives Mittelfeld", "LA": "Linksaußen", "RA": "Rechtsaußen", "MS": "Mittelstürmer",
 }
 const GROUP_OF := {
 	"TW": "TW", "LV": "AB", "IV": "AB", "RV": "AB",
-	"DM": "MF", "ZM": "MF", "OM": "MF", "LA": "ST", "RA": "ST", "MS": "ST",
+	"DM": "MF", "ZM": "MF", "LM": "MF", "RM": "MF", "OM": "MF",
+	"LA": "ST", "RA": "ST", "MS": "ST",
 }
 const GROUPS := ["TW", "AB", "MF", "ST"]
 
@@ -37,6 +39,8 @@ const STRENGTH_WEIGHTS := {
 	"RV": {"tempo": 0.25, "zweikampf": 0.25, "stellung": 0.2, "passen": 0.15, "technik": 0.1, "kopfball": 0.05},
 	"DM": {"zweikampf": 0.3, "passen": 0.25, "stellung": 0.2, "technik": 0.15, "tempo": 0.1},
 	"ZM": {"passen": 0.3, "technik": 0.25, "stellung": 0.15, "zweikampf": 0.15, "tempo": 0.1, "abschluss": 0.05},
+	"LM": {"tempo": 0.25, "passen": 0.25, "technik": 0.2, "zweikampf": 0.1, "stellung": 0.1, "abschluss": 0.1},
+	"RM": {"tempo": 0.25, "passen": 0.25, "technik": 0.2, "zweikampf": 0.1, "stellung": 0.1, "abschluss": 0.1},
 	"OM": {"technik": 0.3, "passen": 0.3, "abschluss": 0.15, "tempo": 0.15, "stellung": 0.05, "zweikampf": 0.05},
 	"LA": {"tempo": 0.3, "technik": 0.25, "abschluss": 0.2, "passen": 0.15, "kopfball": 0.05, "stellung": 0.05},
 	"RA": {"tempo": 0.3, "technik": 0.25, "abschluss": 0.2, "passen": 0.15, "kopfball": 0.05, "stellung": 0.05},
@@ -51,6 +55,8 @@ const ATTR_OFFSETS := {
 	"RV": {"tempo": 4, "zweikampf": 2, "stellung": 2, "passen": 0, "technik": -2, "kopfball": -2, "abschluss": -10, "reflexe": -30},
 	"DM": {"zweikampf": 5, "stellung": 4, "passen": 2, "technik": 0, "tempo": -2, "kopfball": 0, "abschluss": -8, "reflexe": -30},
 	"ZM": {"passen": 5, "technik": 3, "stellung": 1, "zweikampf": 1, "tempo": 0, "abschluss": -4, "kopfball": -4, "reflexe": -30},
+	"LM": {"tempo": 5, "passen": 2, "technik": 1, "abschluss": -4, "zweikampf": -4, "kopfball": -5, "stellung": -3, "reflexe": -30},
+	"RM": {"tempo": 5, "passen": 2, "technik": 1, "abschluss": -4, "zweikampf": -4, "kopfball": -5, "stellung": -3, "reflexe": -30},
 	"OM": {"technik": 5, "passen": 5, "tempo": 1, "abschluss": 0, "zweikampf": -6, "kopfball": -5, "stellung": -3, "reflexe": -30},
 	"LA": {"tempo": 6, "technik": 3, "abschluss": 1, "passen": 0, "zweikampf": -8, "kopfball": -4, "stellung": -5, "reflexe": -30},
 	"RA": {"tempo": 6, "technik": 3, "abschluss": 1, "passen": 0, "zweikampf": -8, "kopfball": -4, "stellung": -5, "reflexe": -30},

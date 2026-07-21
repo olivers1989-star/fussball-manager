@@ -4,11 +4,12 @@ extends RefCounted
 
 ## Formationen als konkrete Positions-Slots (11 pro Formation).
 const FORMATIONS := {
-	"4-4-2": ["TW", "LV", "IV", "IV", "RV", "DM", "ZM", "ZM", "OM", "MS", "MS"],
+	"4-4-2": ["TW", "LV", "IV", "IV", "RV", "LM", "ZM", "ZM", "RM", "MS", "MS"],
+	"4-4-2 (Raute)": ["TW", "LV", "IV", "IV", "RV", "DM", "ZM", "ZM", "OM", "MS", "MS"],
 	"4-3-3": ["TW", "LV", "IV", "IV", "RV", "DM", "ZM", "OM", "LA", "MS", "RA"],
 	"4-2-3-1": ["TW", "LV", "IV", "IV", "RV", "DM", "DM", "OM", "LA", "RA", "MS"],
-	"4-5-1": ["TW", "LV", "IV", "IV", "RV", "DM", "DM", "ZM", "OM", "OM", "MS"],
-	"3-5-2": ["TW", "IV", "IV", "IV", "DM", "DM", "ZM", "OM", "OM", "MS", "MS"],
+	"4-5-1": ["TW", "LV", "IV", "IV", "RV", "LM", "DM", "ZM", "RM", "OM", "MS"],
+	"3-5-2": ["TW", "IV", "IV", "IV", "LM", "DM", "ZM", "RM", "OM", "MS", "MS"],
 	"5-3-2": ["TW", "LV", "IV", "IV", "IV", "RV", "DM", "ZM", "OM", "MS", "MS"],
 }
 

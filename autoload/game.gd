@@ -591,7 +591,7 @@ func end_season() -> Dictionary:
 		world.players.erase(pid)
 
 	# Kader mit Jugendspielern auffüllen
-	var min_per_pos := {"TW": 2, "IV": 3, "LV": 1, "RV": 1, "DM": 2, "ZM": 2, "OM": 1, "LA": 1, "RA": 1, "MS": 2}
+	var min_per_pos := {"TW": 2, "IV": 3, "LV": 1, "RV": 1, "DM": 2, "ZM": 2, "LM": 1, "RM": 1, "OM": 1, "LA": 1, "RA": 1, "MS": 2}
 	for cid in world.clubs:
 		var c: ClubData = world.clubs[cid]
 		# Fähigkeit "Jugendarbeit": der eigene Nachwuchs kommt stärker aus der Akademie
