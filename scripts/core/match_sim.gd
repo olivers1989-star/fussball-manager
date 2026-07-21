@@ -212,8 +212,9 @@ func _chance(for_home: bool, own: Dictionary, opp: Dictionary) -> void:
 		elif _rng.randf() < 0.4:
 			_emit("chance", "Flanke auf %s – sein Kopfball geht knapp vorbei!" % header.full_name())
 		return
-	var conversion := clampf(0.30 * pow(own.att / opp.def, 1.4), 0.06, 0.65)
 	var scorer := _pick_scorer(lineup, "normal")
+	# Die Abschlussstärke des Schützen entscheidet mit (Knipser-Faktor)
+	var conversion := clampf(0.30 * pow(own.att / opp.def, 1.4) * (0.7 + scorer.attr("abschluss") / 200.0), 0.05, 0.7)
 	# Nervenstärke zählt in der Schlussphase
 	if minute >= 75:
 		conversion *= 0.9 + scorer.attr("nerven") / 500.0
@@ -282,13 +283,21 @@ func _best_by_combo(lineup: Array, key_a: String, key_b: String) -> PlayerData:
 			best = players[pid]
 	return best
 
+## Kartenrisiko pro Seite: aggressive Teams foulen wirklich häufiger.
 func _maybe_card() -> void:
-	if _rng.randf() >= 0.014:
-		return
-	var card_home := _rng.randf() < 0.5
+	_maybe_card_side(true)
+	_maybe_card_side(false)
+
+func _maybe_card_side(card_home: bool) -> void:
 	var lineup: Array = lineup_h if card_home else lineup_a
 	var off: Array = _off_h if card_home else _off_a
 	var club: ClubData = home if card_home else away
+	var aggr_sum := 0.0
+	for pid in lineup:
+		aggr_sum += players[pid].attr("aggressivitaet")
+	var chance := 0.0055 * (0.5 + (aggr_sum / lineup.size()) / 75.0)
+	if _rng.randf() >= chance:
+		return
 	# Aggressive Spieler kassieren häufiger Karten
 	var total := 0.0
 	var weights: Array = []
@@ -403,7 +412,7 @@ func _ratings(lineup: Array, mentality: String, factor: float, trailing: bool) -
 				gk_reflex = _attr_val(pid, "reflexe")
 				gk_n += 1
 			"AB":
-				defense += _attr_val(pid, "zweikampf") * 0.3 + _attr_val(pid, "stellung") * 0.25 + _attr_val(pid, "kraft") * 0.15 + _attr_val(pid, "kopfball") * 0.15 + _attr_val(pid, "konzentration") * 0.15
+				defense += _attr_val(pid, "zweikampf") * 0.3 + _attr_val(pid, "stellung") * 0.25 + _attr_val(pid, "kraft") * 0.1 + _attr_val(pid, "kopfball") * 0.15 + _attr_val(pid, "konzentration") * 0.2
 				def_n += 1
 				header += _attr_val(pid, "kopfball") * 0.6 + _attr_val(pid, "sprung") * 0.4
 				header_n += 1
@@ -434,7 +443,7 @@ func _ratings(lineup: Array, mentality: String, factor: float, trailing: bool) -
 		det_f = 1.0 + clampf(ent_sum / lineup.size() - 50.0, 0.0, 45.0) * 0.0008
 	var late_def := 1.0
 	if minute > 70:
-		late_def = clampf(0.94 + (konz_sum / lineup.size()) * 0.0012, 0.9, 1.05)
+		late_def = clampf(0.82 + (konz_sum / lineup.size()) * 0.003, 0.8, 1.1)
 
 	var total_f := factor * lead_f * det_f
 	var m: Dictionary = MENTALITIES[mentality]
@@ -461,9 +470,10 @@ func _drain_rate(p: PlayerData, mentality: String) -> float:
 	var work := 0.92 + p.attr("einsatz") * 0.0016
 	return 0.55 * (1.6 - p.stamina / 100.0) * m * work
 
-## Verletzungen: müde Spieler trifft es eher. Es folgt ein automatischer Zwangswechsel.
+## Verletzungen: müde Spieler trifft es eher, robuste stecken mehr weg.
+## Es folgt ein automatischer Zwangswechsel.
 func _maybe_injury() -> void:
-	if _rng.randf() >= 0.0045:
+	if _rng.randf() >= 0.0062:
 		return
 	var is_home := _rng.randf() < 0.5
 	var lineup: Array = lineup_h if is_home else lineup_a
@@ -484,6 +494,10 @@ func _maybe_injury() -> void:
 			injured_pid = entry[0]
 			break
 	var p: PlayerData = players[injured_pid]
+	# Robuste Spieler stecken den Schlag oft weg – die Verletzung bleibt aus
+	var risk := clampf(1.35 - p.attr("robust") / 100.0, 0.3, 1.3)
+	if _rng.randf() > risk * 0.85:
+		return
 	p.injury_matchdays = _rng.randi_range(1, 5)
 	_emit("injury", "%s (%s) verletzt sich und kann nicht weiterspielen! (Pause: %d Spieltage)" % [p.full_name(), club.short_name, p.injury_matchdays])
 	lineup.erase(injured_pid)

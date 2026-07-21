@@ -152,10 +152,16 @@ func recompute_strength() -> void:
 		total += attr(key) * weights[key]
 	strength = clampi(int(round(total)), 25, 96)
 
-## Entwicklung: verändert zufällige Attribute und aktualisiert die Stärke.
+## Entwicklung: verändert bevorzugt positionsrelevante Attribute (70 %),
+## gelegentlich beliebige – und aktualisiert die Stärke.
 func develop(amount: int, tries: int) -> void:
+	var relevant: Array = STRENGTH_WEIGHTS[pos].keys()
 	for i in tries:
-		var key: String = ATTRIBUTES.keys().pick_random()
+		var key: String
+		if randf() < 0.7:
+			key = relevant.pick_random()
+		else:
+			key = ATTRIBUTES.keys().pick_random()
 		attributes[key] = clampi(attr(key) + amount, 5, 96)
 	recompute_strength()
 
