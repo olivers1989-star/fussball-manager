@@ -46,6 +46,18 @@ var ai_a := true
 var cond := {}              # pid -> aktuelle Frische im Spiel (sinkt Minute für Minute)
 var dayform := {}           # pid -> Tagesform 0.94..1.06 (jeden Spieltag neu ausgewürfelt)
 
+## Spielstatistik (für die Statistik-Anzeige im Spielbildschirm).
+var stats := {
+	"chances_h": 0, "chances_a": 0, "corners_h": 0, "corners_a": 0,
+	"freekicks_h": 0, "freekicks_a": 0, "penalties_h": 0, "penalties_a": 0,
+	"yellow_h": 0, "yellow_a": 0, "reds_h": 0, "reds_a": 0,
+	"poss_h": 0.0, "poss_n": 0,
+}
+
+## Ballbesitz-Schätzung der Heimmannschaft (aus den Mittelfeld-Anteilen).
+func possession_home() -> float:
+	return (stats.poss_h / stats.poss_n) if stats.poss_n > 0 else 0.5
+
 var bench_h: Array = []     # Ersatzbank (max. ClubData.BENCH_SIZE): nur von hier darf gewechselt werden
 var bench_a: Array = []
 var _off_h: Array = []      # Ausgewechselte dürfen nicht zurück aufs Feld
@@ -96,6 +108,8 @@ func tick() -> void:
 	var rat_a := _ratings(lineup_a, slots_a, mentality_a, factor_a * red_a, ag < hg, plan_a)
 
 	var mid_sum: float = rat_h.mid + rat_a.mid
+	stats.poss_h += rat_h.mid / mid_sum
+	stats.poss_n += 1
 	var p_home: float = CHANCE_BASE * (2.0 * rat_h.mid / mid_sum) * HOME_BONUS
 	var p_away: float = CHANCE_BASE * (2.0 * rat_a.mid / mid_sum) * (2.0 - HOME_BONUS)
 
@@ -141,6 +155,19 @@ func _slots_for(club: ClubData, lineup: Array) -> Array:
 		for pid in lineup:
 			slots.append(players[pid].pos)
 	return slots
+
+## Stellt die gespielte Position eines Feldspielers LIVE um (Aufstellungs-Overlay
+## im Spiel) – wirkt ab der nächsten Minute auf die Teamwerte.
+func set_slot(is_home: bool, pid: int, new_slot: String) -> bool:
+	if not PlayerData.GROUP_OF.has(new_slot):
+		return false
+	var lineup: Array = lineup_h if is_home else lineup_a
+	var idx := lineup.find(pid)
+	var slots: Array = slots_h if is_home else slots_a
+	if idx < 0 or idx >= slots.size():
+		return false
+	slots[idx] = new_slot
+	return true
 
 ## Der Slot, auf dem ein Spieler gerade spielt (Bewertungsgrundlage).
 func _slot_of(pid: int, is_home: bool) -> String:
@@ -245,6 +272,7 @@ func _ai_adjust() -> void:
 func _chance(for_home: bool, own: Dictionary, opp: Dictionary) -> void:
 	var lineup: Array = lineup_h if for_home else lineup_a
 	var club: ClubData = home if for_home else away
+	stats["chances_h" if for_home else "chances_a"] += 1
 	# Flankenangriffe: je besser die Außenbahnen, desto häufiger
 	if _rng.randf() < clampf(0.12 + own.wide / 400.0, 0.12, 0.4):
 		var header := _pick_scorer(lineup, "kopfball", for_home)
@@ -282,6 +310,7 @@ func _set_piece(for_home: bool, own: Dictionary, opp: Dictionary) -> void:
 			break
 	if _rng.randf() < 0.4:
 		# Direkter Freistoß
+		stats["freekicks_h" if for_home else "freekicks_a"] += 1
 		var conversion := clampf(0.04 + taker.attr("standards") * 0.0013, 0.03, 0.17)
 		if taker.has_trait("Freistoßspezialist"):
 			conversion += 0.05
@@ -291,6 +320,7 @@ func _set_piece(for_home: bool, own: Dictionary, opp: Dictionary) -> void:
 			_emit("chance", "Freistoß %s: %s fordert den Torwart mit einem strammen Schuss." % [club.short_name, taker.full_name()])
 	else:
 		# Ecke → Kopfballchance
+		stats["corners_h" if for_home else "corners_a"] += 1
 		var header := _pick_scorer(lineup, "kopfball", for_home)
 		var denom: float = opp.def * 0.7 + opp.box * 0.3
 		var conversion := clampf(0.16 * pow(own.header / denom, 1.2), 0.04, 0.4)
@@ -303,6 +333,7 @@ func _set_piece(for_home: bool, own: Dictionary, opp: Dictionary) -> void:
 func _penalty(for_home: bool, opp: Dictionary) -> void:
 	var lineup: Array = lineup_h if for_home else lineup_a
 	var club: ClubData = home if for_home else away
+	stats["penalties_h" if for_home else "penalties_a"] += 1
 	var taker := _best_by_combo(lineup, "standards", "nerven")
 	# Ein Elfmeterspezialist übernimmt die Verantwortung immer selbst
 	for pid in lineup:
@@ -418,6 +449,7 @@ func _maybe_card_side(card_home: bool) -> void:
 	if p.has_trait("Hitzkopf"):
 		red_chance += 0.03
 	if _rng.randf() < red_chance:
+		stats["reds_h" if card_home else "reds_a"] += 1
 		p.red_cards += 1
 		p.suspended_matchdays += 2
 		_note_adj[p.id] = _note_adj.get(p.id, 0.0) + 1.2
@@ -433,6 +465,7 @@ func _maybe_card_side(card_home: bool) -> void:
 		else:
 			red_a *= 0.86
 	else:
+		stats["yellow_h" if card_home else "yellow_a"] += 1
 		p.yellow_cards += 1
 		_note_adj[p.id] = _note_adj.get(p.id, 0.0) + 0.2
 		if p.yellow_cards % 5 == 0:

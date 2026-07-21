@@ -5,6 +5,14 @@ extends Control
 
 const SPEEDS := {"1×": 0.35, "2×": 0.15, "4×": 0.05}
 
+## Anzeige-Koordinaten je Zone (für Teams ohne freie Feldpunkte, z. B. Gegner).
+const ZONE_SPOTS := {
+	"TW": Vector2(0.5, 0.06), "LV": Vector2(0.14, 0.3), "IV": Vector2(0.5, 0.24), "RV": Vector2(0.86, 0.3),
+	"DM": Vector2(0.5, 0.44), "ZM": Vector2(0.5, 0.55), "OM": Vector2(0.5, 0.68),
+	"LM": Vector2(0.12, 0.55), "RM": Vector2(0.88, 0.55),
+	"LA": Vector2(0.15, 0.84), "RA": Vector2(0.85, 0.84), "MS": Vector2(0.5, 0.86),
+}
+
 var _md := {}                 # {mine: MatchSim, others: [MatchSim]}
 var _my_sim: MatchSim
 var _my_home := false
@@ -31,6 +39,17 @@ var _bench_list: ItemList
 var _subs_label: Label
 var _tactic_message: Label
 var _timer: Timer
+var _stats_grid: GridContainer
+var _poss_bar: ProgressBar
+var _overlay: PanelContainer
+var _my_pitch: MatchPitch
+var _opp_pitch: MatchPitch
+var _overlay_bench_box: VBoxContainer
+var _overlay_message: Label
+var _overlay_subs: Label
+var _live_spots := {}         # pid -> Vector2 (Anzeigeposition meiner Elf)
+var _overlay_selected := -1
+var _was_running := false
 
 func _ready() -> void:
 	if Game.next_fixture(Game.my_club_id).is_empty():
@@ -50,7 +69,7 @@ func _build_ui() -> void:
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	for side in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 24)
+		margin.add_theme_constant_override(side, 14)
 	add_child(margin)
 
 	var box := VBoxContainer.new()
@@ -114,6 +133,12 @@ func _build_ui() -> void:
 	_subs_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	mentality_row.add_child(_subs_label)
 
+	var lineup_button := Button.new()
+	lineup_button.text = "🧩 Aufstellung & Wechsel"
+	UITheme.make_primary(lineup_button)
+	lineup_button.pressed.connect(_open_overlay)
+	tactic_box.add_child(lineup_button)
+
 	var field_head := Label.new()
 	field_head.text = "Auf dem Feld"
 	field_head.add_theme_font_size_override("font_size", 13)
@@ -121,7 +146,7 @@ func _build_ui() -> void:
 	tactic_box.add_child(field_head)
 	_field_list = ItemList.new()
 	_field_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_field_list.custom_minimum_size = Vector2(0, 250)
+	_field_list.custom_minimum_size = Vector2(0, 128)
 	tactic_box.add_child(_field_list)
 	var bench_head := Label.new()
 	bench_head.text = "Ersatzbank (nur von hier darf gewechselt werden)"
@@ -129,7 +154,7 @@ func _build_ui() -> void:
 	bench_head.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	tactic_box.add_child(bench_head)
 	_bench_list = ItemList.new()
-	_bench_list.custom_minimum_size = Vector2(0, 150)
+	_bench_list.custom_minimum_size = Vector2(0, 92)
 	tactic_box.add_child(_bench_list)
 
 	var sub_row := HBoxContainer.new()
@@ -146,13 +171,32 @@ func _build_ui() -> void:
 	_tactic_message.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sub_row.add_child(_tactic_message)
 
-	# Konferenz-Karte
-	var conf_card := _card_column("📡 Konferenz · %s" % Game.my_league().name)
-	side_panel.add_child(conf_card)
-	var conf_box: VBoxContainer = conf_card.get_child(0)
+	# Statistik & Konferenz nebeneinander in einer Karte
+	var info_card := _card_column("📊 Statistik & Konferenz")
+	side_panel.add_child(info_card)
+	var info_box: VBoxContainer = info_card.get_child(0)
+	_poss_bar = ProgressBar.new()
+	_poss_bar.max_value = 100
+	_poss_bar.value = 50
+	_poss_bar.show_percentage = false
+	_poss_bar.custom_minimum_size = Vector2(0, 10)
+	_poss_bar.add_theme_stylebox_override("background", UITheme.box(Color("#7f1d1d"), 4))
+	_poss_bar.add_theme_stylebox_override("fill", UITheme.box(UITheme.ACCENT, 4))
+	_poss_bar.tooltip_text = "Spielanteile"
+	info_box.add_child(_poss_bar)
+	var info_row := HBoxContainer.new()
+	info_row.add_theme_constant_override("separation", 14)
+	info_box.add_child(info_row)
+	_stats_grid = GridContainer.new()
+	_stats_grid.columns = 3
+	_stats_grid.add_theme_constant_override("h_separation", 8)
+	_stats_grid.add_theme_constant_override("v_separation", 2)
+	_stats_grid.custom_minimum_size = Vector2(190, 0)
+	info_row.add_child(_stats_grid)
 	_conference = ItemList.new()
-	_conference.custom_minimum_size = Vector2(0, 150)
-	conf_box.add_child(_conference)
+	_conference.custom_minimum_size = Vector2(0, 108)
+	_conference.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info_row.add_child(_conference)
 
 	# --- Steuerleiste
 	_controls_bar = HBoxContainer.new()
@@ -237,14 +281,14 @@ func _build_ui() -> void:
 func _card_column(title: String) -> PanelContainer:
 	var card := PanelContainer.new()
 	var sb := UITheme.box(UITheme.SURFACE, 12, UITheme.BORDER)
-	sb.set_content_margin_all(16)
+	sb.set_content_margin_all(11)
 	card.add_theme_stylebox_override("panel", sb)
 	var inner := VBoxContainer.new()
-	inner.add_theme_constant_override("separation", 8)
+	inner.add_theme_constant_override("separation", 6)
 	card.add_child(inner)
 	var head := Label.new()
 	head.text = title
-	head.add_theme_font_size_override("font_size", 17)
+	head.add_theme_font_size_override("font_size", 15)
 	head.add_theme_color_override("font_color", UITheme.ACCENT)
 	inner.add_child(head)
 	return card
@@ -252,10 +296,10 @@ func _card_column(title: String) -> PanelContainer:
 func _build_scoreboard() -> PanelContainer:
 	var card := PanelContainer.new()
 	var sb := UITheme.box(UITheme.SURFACE, 14, UITheme.BORDER)
-	sb.set_content_margin_all(18)
+	sb.set_content_margin_all(12)
 	card.add_theme_stylebox_override("panel", sb)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 6)
+	v.add_theme_constant_override("separation", 4)
 	card.add_child(v)
 
 	var row := HBoxContainer.new()
@@ -278,7 +322,7 @@ func _build_scoreboard() -> PanelContainer:
 	_score_label = Label.new()
 	_score_label.text = "– : –"
 	_score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_score_label.add_theme_font_size_override("font_size", 54)
+	_score_label.add_theme_font_size_override("font_size", 38)
 	_score_label.add_theme_color_override("font_color", Color.WHITE)
 	center.add_child(_score_label)
 	_minute_label = Label.new()
@@ -383,7 +427,14 @@ func _on_kickoff() -> void:
 	_live_box.visible = true
 	_controls_bar.visible = true
 	_score_label.text = "0 : 0"
+	# Anzeigepositionen meiner Elf übernehmen (für das Aufstellungs-Overlay)
+	var c := Game.my_club()
+	var lineup: Array = _my_sim.lineup_h if _my_home else _my_sim.lineup_a
+	if c.lineup == lineup and c.lineup_spots.size() == lineup.size():
+		for i in lineup.size():
+			_live_spots[lineup[i]] = c.lineup_spots[i]
 	_refresh_tactic_panel()
+	_update_stats()
 	_running = true
 	_timer.start()
 
@@ -399,9 +450,10 @@ func _on_tick() -> void:
 	_minute_label.text = "%d. Minute" % _my_sim.minute
 	_progress.value = _my_sim.minute
 	_update_conference()
-	# Frische & Bänke live aktualisieren (Auswahl bleibt erhalten)
+	# Frische, Bänke und Statistik live aktualisieren (Auswahl bleibt erhalten)
 	if _my_sim.minute % 3 == 0:
 		_refresh_tactic_panel()
+		_update_stats()
 	if _my_sim.minute == 45:
 		_set_paused(true)
 		_refresh_tactic_panel()
@@ -445,6 +497,8 @@ func _finish() -> void:
 	_minute_label.text = "🏁 Schlusspfiff"
 	_progress.value = 90
 	_score_label.text = "%d : %d" % [_my_sim.hg, _my_sim.ag]
+	if _overlay != null:
+		_overlay.visible = false
 	_controls_bar.visible = false
 	_live_box.visible = false
 	_post_panel.visible = true
@@ -616,3 +670,368 @@ func _update_conference() -> void:
 		if sim.home.league_id != Game.my_club().league_id:
 			continue
 		_conference.add_item("%s %d : %d %s   (%d')" % [sim.home.short_name, sim.hg, sim.ag, sim.away.short_name, sim.minute])
+
+func _update_stats() -> void:
+	_poss_bar.value = _my_sim.possession_home() * 100.0
+	if not _my_home:
+		_poss_bar.value = 100.0 - _poss_bar.value
+	_poss_bar.tooltip_text = "Spielanteile: %d %% für dich" % int(_poss_bar.value)
+	for child in _stats_grid.get_children():
+		child.queue_free()
+	var s: Dictionary = _my_sim.stats
+	var rows := [
+		["Chancen", s.chances_h, s.chances_a],
+		["Ecken", s.corners_h, s.corners_a],
+		["Freistöße", s.freekicks_h, s.freekicks_a],
+		["Elfmeter", s.penalties_h, s.penalties_a],
+		["Gelbe", s.yellow_h, s.yellow_a],
+		["Rote", s.reds_h, s.reds_a],
+	]
+	for row in rows:
+		var left := Label.new()
+		left.text = str(row[1] if _my_home else row[2])
+		left.custom_minimum_size = Vector2(26, 0)
+		left.add_theme_font_size_override("font_size", 13)
+		left.add_theme_color_override("font_color", UITheme.ACCENT)
+		_stats_grid.add_child(left)
+		var mid := Label.new()
+		mid.text = str(row[0])
+		mid.custom_minimum_size = Vector2(90, 0)
+		mid.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		mid.add_theme_font_size_override("font_size", 13)
+		mid.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		_stats_grid.add_child(mid)
+		var right := Label.new()
+		right.text = str(row[2] if _my_home else row[1])
+		right.add_theme_font_size_override("font_size", 13)
+		_stats_grid.add_child(right)
+
+# ------------------------------------------------------------------ Aufstellungs-Overlay
+
+## Spielfeld-Ansicht einer Mannschaft im Spiel. Meine Elf ist interaktiv:
+## Chips ziehen = Position live umstellen, Bank-Chip auf Spieler ziehen = Wechsel.
+class MatchPitch extends Control:
+	var screen
+	var is_home := false
+	var interactive := false
+	var chips := {}   # pid -> Button
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color("#1a6b34"))
+		for i in 8:
+			if i % 2 == 0:
+				draw_rect(Rect2(0, size.y * i / 8.0, size.x, size.y / 8.0), Color("#1d7439"))
+		var line := Color(1, 1, 1, 0.45)
+		var inset := 4.0
+		draw_rect(Rect2(Vector2(inset, inset), size - Vector2(inset * 2, inset * 2)), line, false, 1.5)
+		draw_line(Vector2(inset, size.y * 0.5), Vector2(size.x - inset, size.y * 0.5), line, 1.5)
+		draw_arc(Vector2(size.x * 0.5, size.y * 0.5), size.x * 0.11, 0, TAU, 40, line, 1.5)
+		var box_w := size.x * 0.5
+		var box_h := size.y * 0.13
+		draw_rect(Rect2(Vector2((size.x - box_w) / 2.0, size.y - inset - box_h), Vector2(box_w, box_h)), line, false, 1.5)
+		draw_rect(Rect2(Vector2((size.x - box_w) / 2.0, inset), Vector2(box_w, box_h)), line, false, 1.5)
+
+	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
+		return interactive and data is Dictionary and data.get("kind", "") in ["mslot", "mbench"]
+
+	func _drop_data(at: Vector2, data: Variant) -> void:
+		screen._overlay_drop_on_pitch(at, data, self)
+
+func _open_overlay() -> void:
+	_was_running = _running
+	_set_paused(true)
+	if _overlay == null:
+		_build_overlay()
+	_overlay.visible = true
+	_overlay_selected = -1
+	_refresh_overlay()
+
+func _close_overlay() -> void:
+	_overlay.visible = false
+	_refresh_tactic_panel()
+	if _was_running and not _my_sim.finished:
+		_set_paused(false)
+
+func _build_overlay() -> void:
+	_overlay = PanelContainer.new()
+	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var sb := UITheme.box(Color(0.02, 0.04, 0.03, 0.97), 0)
+	sb.set_content_margin_all(18)
+	_overlay.add_theme_stylebox_override("panel", sb)
+	add_child(_overlay)
+
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	_overlay.add_child(v)
+
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	v.add_child(head)
+	var title := Label.new()
+	title.text = "🧩 Aufstellung & Wechsel"
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", UITheme.ACCENT)
+	head.add_child(title)
+	_overlay_subs = Label.new()
+	_overlay_subs.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	head.add_child(_overlay_subs)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(spacer)
+	var close := Button.new()
+	close.text = "✔ Fertig – weiter geht's"
+	UITheme.make_primary(close)
+	close.pressed.connect(_close_overlay)
+	head.add_child(close)
+
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 14)
+	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(columns)
+
+	var my_col := VBoxContainer.new()
+	my_col.add_theme_constant_override("separation", 4)
+	my_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	my_col.size_flags_stretch_ratio = 1.1
+	columns.add_child(my_col)
+	var my_title := Label.new()
+	my_title.text = "Deine Elf – Spieler ziehen = Position live umstellen"
+	my_title.add_theme_font_size_override("font_size", 14)
+	my_title.add_theme_color_override("font_color", UITheme.ACCENT)
+	my_col.add_child(my_title)
+	_my_pitch = MatchPitch.new()
+	_my_pitch.screen = self
+	_my_pitch.is_home = _my_home
+	_my_pitch.interactive = true
+	_my_pitch.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_my_pitch.clip_contents = true
+	_my_pitch.resized.connect(_refresh_overlay_pitches)
+	my_col.add_child(_my_pitch)
+
+	var mid_col := VBoxContainer.new()
+	mid_col.add_theme_constant_override("separation", 5)
+	mid_col.custom_minimum_size = Vector2(210, 0)
+	columns.add_child(mid_col)
+	var bench_title := Label.new()
+	bench_title.text = "🪑 Ersatzbank"
+	bench_title.add_theme_font_size_override("font_size", 14)
+	bench_title.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	mid_col.add_child(bench_title)
+	_overlay_bench_box = VBoxContainer.new()
+	_overlay_bench_box.add_theme_constant_override("separation", 4)
+	mid_col.add_child(_overlay_bench_box)
+	var hint := Label.new()
+	hint.text = "Bank-Spieler auf einen\nFeldspieler ziehen (oder\nbeide anklicken) = Wechsel.\nNur gleiche Positionsgruppe,\nmax. 5 Wechsel."
+	hint.add_theme_font_size_override("font_size", 11)
+	hint.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	mid_col.add_child(hint)
+	_overlay_message = Label.new()
+	_overlay_message.add_theme_font_size_override("font_size", 12)
+	_overlay_message.add_theme_color_override("font_color", UITheme.WARN)
+	_overlay_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_overlay_message.custom_minimum_size = Vector2(200, 0)
+	mid_col.add_child(_overlay_message)
+
+	var opp_col := VBoxContainer.new()
+	opp_col.add_theme_constant_override("separation", 4)
+	opp_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns.add_child(opp_col)
+	var opp_club: ClubData = _my_sim.away if _my_home else _my_sim.home
+	var opp_title := Label.new()
+	opp_title.text = "Gegner: %s (%s)" % [opp_club.name, opp_club.shape_label()]
+	opp_title.add_theme_font_size_override("font_size", 14)
+	opp_title.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	opp_col.add_child(opp_title)
+	_opp_pitch = MatchPitch.new()
+	_opp_pitch.screen = self
+	_opp_pitch.is_home = not _my_home
+	_opp_pitch.interactive = false
+	_opp_pitch.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_opp_pitch.clip_contents = true
+	_opp_pitch.resized.connect(_refresh_overlay_pitches)
+	opp_col.add_child(_opp_pitch)
+
+func _refresh_overlay() -> void:
+	_overlay_subs.text = "Wechsel %d/%d · %d. Minute · %d:%d" % [
+		_my_sim.subs_used(_my_home), MatchSim.MAX_SUBS, _my_sim.minute,
+		_my_sim.hg if _my_home else _my_sim.ag, _my_sim.ag if _my_home else _my_sim.hg]
+	_fill_overlay_bench()
+	_refresh_overlay_pitches()
+
+## Anzeigepositionen einer Elf: eigene freie Punkte, wenn verfügbar; sonst
+## Zonen-Standardpunkte mit horizontaler Auffächerung doppelter Positionen.
+func _display_spots(sim_lineup: Array, is_home: bool, club: ClubData) -> Dictionary:
+	var spots := {}
+	if club.lineup == sim_lineup and club.lineup_spots.size() == sim_lineup.size():
+		for i in sim_lineup.size():
+			spots[sim_lineup[i]] = club.lineup_spots[i]
+		return spots
+	# Zonen zählen und auffächern
+	var by_slot := {}
+	for pid in sim_lineup:
+		var slot := _my_sim._slot_of(pid, is_home)
+		if not by_slot.has(slot):
+			by_slot[slot] = []
+		by_slot[slot].append(pid)
+	for slot in by_slot:
+		var group: Array = by_slot[slot]
+		var base: Vector2 = ZONE_SPOTS.get(slot, Vector2(0.5, 0.5))
+		for k in group.size():
+			var offset := (k - (group.size() - 1) / 2.0) * 0.17
+			spots[group[k]] = Vector2(clampf(base.x + offset, 0.08, 0.92), base.y)
+	# Meine gemerkten Live-Positionen haben Vorrang
+	if is_home == _my_home:
+		for pid in sim_lineup:
+			if _live_spots.has(pid):
+				spots[pid] = _live_spots[pid]
+	return spots
+
+func _refresh_overlay_pitches() -> void:
+	if _overlay == null or not _overlay.visible:
+		return
+	_fill_pitch(_my_pitch, Game.my_club())
+	_fill_pitch(_opp_pitch, _my_sim.away if _my_home else _my_sim.home)
+
+func _fill_pitch(pitch: MatchPitch, club: ClubData) -> void:
+	for child in pitch.get_children():
+		child.queue_free()
+	pitch.chips.clear()
+	var lineup: Array = _my_sim.lineup_h if pitch.is_home else _my_sim.lineup_a
+	var spots := _display_spots(lineup, pitch.is_home, club)
+	var chip_size := Vector2(118, 48)
+	for pid in lineup:
+		var p := Game.get_player(pid)
+		var slot: String = _my_sim._slot_of(pid, pitch.is_home)
+		var chip := Button.new()
+		chip.custom_minimum_size = chip_size
+		chip.clip_text = true
+		chip.focus_mode = Control.FOCUS_NONE
+		var st := p.strength_at(slot)
+		chip.text = "%s %s\n%s · %d%%" % [slot, p.last_name, "St %d" % st, int(_my_sim.cond[pid])]
+		chip.add_theme_font_size_override("font_size", 11)
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.06, 0.09, 0.08, 0.94)
+		style.set_corner_radius_all(7)
+		style.set_border_width_all(2)
+		var group_colors := {"TW": Color("#eab308"), "AB": Color("#3b82f6"), "MF": Color("#22c55e"), "ST": Color("#ef4444")}
+		style.border_color = group_colors[PlayerData.GROUP_OF[slot]]
+		if pid == _overlay_selected:
+			style.border_color = Color.WHITE
+			style.set_border_width_all(3)
+		chip.add_theme_stylebox_override("normal", style)
+		chip.add_theme_stylebox_override("hover", style)
+		chip.add_theme_stylebox_override("pressed", style)
+		var spot: Vector2 = spots.get(pid, Vector2(0.5, 0.5))
+		chip.position = Vector2(spot.x * pitch.size.x, (1.0 - spot.y) * pitch.size.y) - chip_size / 2.0
+		chip.position.x = clampf(chip.position.x, 1, maxf(pitch.size.x - chip_size.x - 1, 1))
+		chip.position.y = clampf(chip.position.y, 1, maxf(pitch.size.y - chip_size.y - 1, 1))
+		if pitch.interactive:
+			chip.pressed.connect(_on_overlay_chip_clicked.bind(pid))
+			chip.set_drag_forwarding(
+				func(_at: Vector2): return _overlay_drag_data(chip, p, "mslot", pid),
+				func(_at: Vector2, data: Variant): return data is Dictionary and data.get("kind", "") == "mbench",
+				func(_at: Vector2, data: Variant): _overlay_substitute(pid, int(data.pid)))
+		pitch.add_child(chip)
+		pitch.chips[pid] = chip
+
+## Drag-Start aus dem Overlay: Vorschau setzen und Drag-Daten liefern.
+func _overlay_drag_data(source: Control, p: PlayerData, kind: String, pid: int) -> Dictionary:
+	make_overlay_preview(source, p)
+	return {"kind": kind, "pid": pid}
+
+func make_overlay_preview(source: Control, p: PlayerData) -> void:
+	var panel := PanelContainer.new()
+	var style := UITheme.box(Color(0.05, 0.08, 0.07, 0.92), 7, Color.WHITE)
+	style.set_content_margin_all(6)
+	panel.add_theme_stylebox_override("panel", style)
+	var label := Label.new()
+	label.text = "%s\nSt %d" % [p.last_name, p.strength]
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 12)
+	panel.add_child(label)
+	panel.custom_minimum_size = Vector2(118, 48)
+	var wrapper := Control.new()
+	wrapper.add_child(panel)
+	panel.position = -panel.custom_minimum_size / 2.0
+	source.set_drag_preview(wrapper)
+
+func _fill_overlay_bench() -> void:
+	for child in _overlay_bench_box.get_children():
+		child.queue_free()
+	for pid in _my_sim.bench(_my_home):
+		var p := Game.get_player(pid)
+		var chip := Button.new()
+		chip.custom_minimum_size = Vector2(0, 34)
+		chip.clip_text = true
+		chip.focus_mode = Control.FOCUS_NONE
+		chip.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		var joker := " 🃏" if p.has_trait("Joker") else ""
+		chip.text = " %s %s · St %d · %d%%%s" % [p.pos, p.last_name, p.strength, int(_my_sim.cond[pid]), joker]
+		chip.add_theme_font_size_override("font_size", 12)
+		var style := UITheme.box(Color(0.09, 0.12, 0.1), 6, Color(1, 1, 1, 0.2) if pid != _overlay_selected else Color.WHITE)
+		chip.add_theme_stylebox_override("normal", style)
+		chip.add_theme_stylebox_override("hover", style)
+		chip.add_theme_stylebox_override("pressed", style)
+		chip.pressed.connect(_on_overlay_bench_clicked.bind(pid))
+		chip.set_drag_forwarding(
+			func(_at: Vector2): return _overlay_drag_data(chip, p, "mbench", pid),
+			func(_at: Vector2, _data: Variant): return false,
+			func(_at: Vector2, _data: Variant): pass)
+		_overlay_bench_box.add_child(chip)
+
+## Drop auf meinem Feld: Feldspieler verschieben (Zone live umstellen)
+## oder Bankspieler auf die Zone des nächsten Feldspielers einwechseln.
+func _overlay_drop_on_pitch(at: Vector2, data: Dictionary, pitch: MatchPitch) -> void:
+	var norm := Vector2(clampf(at.x / pitch.size.x, 0.02, 0.98), clampf(1.0 - at.y / pitch.size.y, 0.02, 0.98))
+	var zone := ClubData.zone_position(norm)
+	if str(data.kind) == "mslot":
+		var pid := int(data.pid)
+		if _my_sim.set_slot(_my_home, pid, zone):
+			_live_spots[pid] = norm
+			_overlay_message.text = "%s spielt jetzt %s." % [Game.get_player(pid).last_name, zone]
+			_flush_events()
+		_refresh_overlay()
+	elif str(data.kind) == "mbench":
+		# Einwechseln: Ziel ist der Feldspieler, der der Ablage am nächsten steht
+		var lineup: Array = _my_sim.lineup_h if _my_home else _my_sim.lineup_a
+		var spots := _display_spots(lineup, _my_home, Game.my_club())
+		var nearest := -1
+		var best := INF
+		for pid in lineup:
+			var d: float = spots.get(pid, Vector2(0.5, 0.5)).distance_to(norm)
+			if d < best:
+				best = d
+				nearest = pid
+		if nearest > 0:
+			_overlay_substitute(nearest, int(data.pid))
+
+func _overlay_substitute(pid_out: int, pid_in: int) -> void:
+	var error := _my_sim.substitute(_my_home, pid_out, pid_in)
+	if error.is_empty():
+		# Der Neue erbt die Anzeigeposition des Ausgewechselten
+		if _live_spots.has(pid_out):
+			_live_spots[pid_in] = _live_spots[pid_out]
+		_overlay_message.text = "Wechsel: %s kommt für %s." % [Game.get_player(pid_in).last_name, Game.get_player(pid_out).last_name]
+		_flush_events()
+	else:
+		_overlay_message.text = error
+	_overlay_selected = -1
+	_refresh_overlay()
+
+func _on_overlay_chip_clicked(pid: int) -> void:
+	if _overlay_selected > 0 and _overlay_selected != pid and not (_my_sim.lineup_h if _my_home else _my_sim.lineup_a).has(_overlay_selected):
+		# Bankspieler war gewählt → Wechsel
+		var pid_in := _overlay_selected
+		_overlay_substitute(pid, pid_in)
+		return
+	_overlay_selected = pid if _overlay_selected != pid else -1
+	_refresh_overlay()
+
+func _on_overlay_bench_clicked(pid: int) -> void:
+	if _overlay_selected > 0 and (_my_sim.lineup_h if _my_home else _my_sim.lineup_a).has(_overlay_selected):
+		# Feldspieler war gewählt → Wechsel
+		var pid_out := _overlay_selected
+		_overlay_substitute(pid_out, pid)
+		return
+	_overlay_selected = pid if _overlay_selected != pid else -1
+	_refresh_overlay()

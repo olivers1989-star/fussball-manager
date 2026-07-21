@@ -17,6 +17,11 @@ func _ready() -> void:
 		screen._on_tick()
 	await get_tree().create_timer(0.8).timeout
 	get_viewport().get_texture().get_image().save_png("user://match_live_shot.png")
+	# Aufstellungs-Overlay mit beiden Teams
+	screen._open_overlay()
+	await get_tree().create_timer(0.8).timeout
+	get_viewport().get_texture().get_image().save_png("user://match_overlay_shot.png")
+	screen._close_overlay()
 	screen._finish_instantly()
 	await get_tree().create_timer(0.8).timeout
 	get_viewport().get_texture().get_image().save_png("user://match_post_shot.png")
