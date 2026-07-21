@@ -180,7 +180,7 @@ func open_for(pid: int) -> void:
 	_info.rating.text = ("%.1f" % p.avg_rating()).replace(".", ",") if p.matches_season > 0 else "–"
 
 	_set_bar(_state_bars, "condition", p.condition, "%d%%" % int(p.condition))
-	_set_bar(_state_bars, "form", (p.form - 0.8) / 0.4 * 100.0, Fmt.form_str(p.form))
+	_set_bar(_state_bars, "form", (p.form - 0.8) / 0.4 * 100.0, Fmt.form_icon(p.form))
 	_set_bar(_state_bars, "stamina", p.stamina, str(p.stamina))
 	for key in PlayerData.ATTRIBUTES:
 		_set_bar(_attr_bars, key, p.attr(key), str(p.attr(key)))

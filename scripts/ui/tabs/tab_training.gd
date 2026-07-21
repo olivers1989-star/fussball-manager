@@ -79,7 +79,7 @@ func refresh() -> void:
 		if p.is_suspended():
 			suspended += 1
 	_status.text = "Ø Frische: %d%%    ·    Ø Form: %s    ·    Verletzte: %d    ·    Gesperrte: %d    ·    Trainer-Fähigkeit Training: %d/%d" % [
-		int(cond_sum / squad.size()), Fmt.form_str(form_sum / squad.size()),
+		int(cond_sum / squad.size()), Fmt.form_icon(form_sum / squad.size()),
 		injured, suspended, Game.skill("training"), Game.SKILL_MAX]
 
 	_tree.clear()
@@ -91,7 +91,8 @@ func refresh() -> void:
 		item.set_text(1, p.full_name())
 		item.set_text(2, "%d%%" % int(p.condition))
 		item.set_text(3, str(p.stamina))
-		item.set_text(4, Fmt.form_str(p.form))
+		item.set_text(4, Fmt.form_icon(p.form))
+		item.set_custom_color(4, Fmt.form_color(p.form))
 		if p.is_injured():
 			item.set_text(5, "Verletzt (%d Sp.)" % p.injury_matchdays)
 			item.set_custom_color(5, Color("#f87171"))

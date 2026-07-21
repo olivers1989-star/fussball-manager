@@ -25,3 +25,28 @@ static func thousands(a: int) -> String:
 
 static func form_str(f: float) -> String:
 	return ("%.2f" % f).replace(".", ",")
+
+## Form als Symbol statt Zahl: ↑↑ Topform … ↓↓ Formloch.
+static func form_icon(f: float) -> String:
+	if f >= 1.10:
+		return "↑↑"
+	if f >= 1.03:
+		return "↑"
+	if f >= 0.97:
+		return "→"
+	if f >= 0.90:
+		return "↓"
+	return "↓↓"
+
+static func form_color(f: float) -> Color:
+	if f >= 1.03:
+		return Color("#4ade80")
+	if f >= 0.97:
+		return Color("#94a3b8")
+	return Color("#f87171")
+
+## Durchschnittsnote formatiert ("–" ohne Einsätze).
+static func note_str(p: PlayerData) -> String:
+	if p.matches_season <= 0:
+		return "–"
+	return ("%.1f" % p.avg_rating()).replace(".", ",")

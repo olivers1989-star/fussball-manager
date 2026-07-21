@@ -214,7 +214,9 @@ func _refresh_status(c: ClubData) -> void:
 	_status_rows.cond.text = "%d %%" % int(avg_cond)
 	_status_rows.cond.add_theme_color_override("font_color",
 		UITheme.ACCENT if avg_cond >= 85 else (UITheme.WARN if avg_cond >= 65 else UITheme.DANGER))
-	_status_rows.form.text = Fmt.form_str(form_sum / squad.size())
+	var avg_form := form_sum / squad.size()
+	_status_rows.form.text = Fmt.form_icon(avg_form)
+	_status_rows.form.add_theme_color_override("font_color", Fmt.form_color(avg_form))
 	_status_rows.fit.text = "%d von %d" % [squad.size() - injured - suspended, squad.size()]
 	_status_rows.injured.text = str(injured)
 	_status_rows.injured.add_theme_color_override("font_color", UITheme.DANGER if injured > 0 else UITheme.TEXT)

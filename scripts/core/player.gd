@@ -141,16 +141,17 @@ static func roll_potential(p_talent: int, current_strength: int) -> int:
 	var band: Array = POTENTIAL_BANDS[p_talent]
 	return maxi(randi_range(int(band[0]), int(band[1])), current_strength + 2)
 
-## Talentstufe würfeln: 3★ ist der Normalfall, 5★ selten.
+## Talentstufe würfeln: 3★ ist der Normalfall, 4★ selten, 5★ eine Rarität
+## (~2 % – nur eine Handvoll Ausnahmetalente in der ganzen Spielwelt).
 static func roll_talent() -> int:
 	var roll := randf()
-	if roll < 0.12:
+	if roll < 0.20:
 		return 1
-	if roll < 0.40:
+	if roll < 0.55:
 		return 2
-	if roll < 0.74:
+	if roll < 0.88:
 		return 3
-	if roll < 0.92:
+	if roll < 0.98:
 		return 4
 	return 5
 

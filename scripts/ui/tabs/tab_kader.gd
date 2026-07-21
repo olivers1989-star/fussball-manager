@@ -59,7 +59,10 @@ func refresh() -> void:
 		"Marktwert":
 			squad.sort_custom(func(a, b): return a.market_value() > b.market_value())
 		"Note":
-			squad.sort_custom(func(a, b): return a.last_rating < b.last_rating if a.last_rating > 0 and b.last_rating > 0 else a.last_rating > b.last_rating)
+			squad.sort_custom(func(a, b):
+				if a.matches_season > 0 and b.matches_season > 0:
+					return a.avg_rating() < b.avg_rating()
+				return a.matches_season > b.matches_season)
 		_:
 			squad.sort_custom(func(a, b):
 				var order_a: int = PlayerData.POSITIONS.find(a.pos)
@@ -135,8 +138,8 @@ func _player_row(p: PlayerData, c: ClubData) -> PanelContainer:
 	cond_bar.add_theme_stylebox_override("fill", UITheme.box(cond_color, 5))
 	cond_box.add_child(cond_bar)
 
-	line.add_child(_stat_box("Form", Fmt.form_str(p.form), 56))
-	line.add_child(_stat_box("Note", ("%.1f" % p.last_rating).replace(".", ",") if p.last_rating > 0.0 else "–", 50))
+	line.add_child(_stat_box("Form", Fmt.form_icon(p.form), 56, Fmt.form_color(p.form)))
+	line.add_child(_stat_box("Ø Note", Fmt.note_str(p), 56))
 	line.add_child(_stat_box("Tore", str(p.goals_season), 46))
 	line.add_child(_stat_box("Marktwert", Fmt.money(p.market_value()), 110))
 
@@ -148,7 +151,7 @@ func _player_row(p: PlayerData, c: ClubData) -> PanelContainer:
 		line.add_child(UITheme.mini_pill("fit", Color("#14532d"), Color("#bbf7d0"), 104))
 	return panel
 
-func _stat_box(caption: String, value: String, width: int) -> VBoxContainer:
+func _stat_box(caption: String, value: String, width: int, color := Color(0, 0, 0, 0)) -> VBoxContainer:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 0)
 	v.custom_minimum_size = Vector2(width, 0)
@@ -160,5 +163,7 @@ func _stat_box(caption: String, value: String, width: int) -> VBoxContainer:
 	var val := Label.new()
 	val.text = value
 	val.add_theme_font_size_override("font_size", 17)
+	if color.a > 0.0:
+		val.add_theme_color_override("font_color", color)
 	v.add_child(val)
 	return v

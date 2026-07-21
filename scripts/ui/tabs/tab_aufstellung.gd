@@ -106,7 +106,7 @@ func _fill_list(list: ItemList, ids: Array) -> void:
 		elif p.is_suspended():
 			status_info = "  🟥 Gesperrt %d Sp." % p.suspended_matchdays
 		var idx := list.add_item("%s  %s  (St %d · Form %s · Frische %d%%)%s" % [
-			p.pos, p.full_name(), p.strength, Fmt.form_str(p.form), int(p.condition), status_info])
+			p.pos, p.full_name(), p.strength, Fmt.form_icon(p.form), int(p.condition), status_info])
 		list.set_item_metadata(idx, pid)
 
 func _on_formation_changed(index: int) -> void:
