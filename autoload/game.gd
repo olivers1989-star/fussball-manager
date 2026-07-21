@@ -556,10 +556,11 @@ func end_season() -> Dictionary:
 	for cid in world.clubs:
 		world.leagues[world.clubs[cid].league_id].club_ids.append(cid)
 
-	# Spieler altern, Verträge laufen ab, Karriereenden
+	# Spieler entwickeln sich (VOR dem Statistik-Reset), altern, Verträge laufen ab
 	var retiring: Array = []
 	for pid in world.players:
 		var p: PlayerData = world.players[pid]
+		p.develop_by_strength(_season_development(p))
 		p.age += 1
 		p.contract_years -= 1
 		p.reset_season_stats()
@@ -576,14 +577,6 @@ func end_season() -> Dictionary:
 			# Automatische Verlängerung (KI wie Spieler) – Vertragsverhandlungen kommen in einer späteren Ausbaustufe
 			p.contract_years = randi_range(2, 3)
 			p.salary = p.expected_salary()
-		# Entwicklung: Junge verbessern Attribute (Entschlossene schneller), Alte bauen ab
-		if p.age <= 23:
-			var tries := randi_range(1, 3)
-			if randf() < p.attr("entschlossenheit") / 160.0:
-				tries += 1
-			p.develop(randi_range(1, 2), tries)
-		elif p.age >= 31:
-			p.develop(-randi_range(1, 2), randi_range(1, 3))
 
 	for pid in retiring:
 		var p: PlayerData = world.players[pid]
@@ -612,6 +605,44 @@ func end_season() -> Dictionary:
 	world.date = ScheduleGen.season_start(int(world.season_year))
 	world.matchday_dates = ScheduleGen.matchday_dates(int(world.season_year))
 	return summary
+
+## Saison-Entwicklung in Stärkepunkten: Alterskurve × Talent × Einsatzzeit ×
+## Noten × Entschlossenheit, gebremst vom Potenzial. Negativ ab Anfang 30.
+func _season_development(p: PlayerData) -> float:
+	var delta := 0.0
+	if p.age <= 19:
+		delta = 2.2
+	elif p.age <= 21:
+		delta = 1.8
+	elif p.age <= 23:
+		delta = 1.4
+	elif p.age <= 26:
+		delta = 0.5
+	elif p.age <= 29:
+		delta = 0.0
+	elif p.age <= 31:
+		delta = -0.8
+	elif p.age <= 33:
+		delta = -1.8
+	else:
+		delta = -2.6
+	if delta > 0.0:
+		# Talent bestimmt das Tempo, Einsatzzeit und Leistung beschleunigen
+		delta *= [0.5, 0.75, 1.0, 1.35, 1.75][p.talent - 1]
+		delta *= 0.6 + minf(p.matches_season, 28.0) / 28.0 * 0.8
+		if p.matches_season >= 5:
+			delta *= clampf(1.0 + (3.2 - p.avg_rating()) * 0.25, 0.8, 1.3)
+		delta *= 1.0 + (p.attr("entschlossenheit") - 50.0) / 500.0
+		if p.club_id == my_club_id and training_focus == "Leistung" and p.age <= 26:
+			delta += 0.4
+		# Potenzialbremse: nahe der eigenen Obergrenze wird die Luft dünn
+		var headroom := float(p.potential - p.strength)
+		if headroom <= 0.0:
+			delta = 0.0
+		else:
+			delta = minf(delta, headroom) * clampf(headroom / 5.0, 0.25, 1.0)
+	delta += randf_range(-0.3, 0.3)
+	return clampf(delta, -4.0, 5.0)
 
 # ------------------------------------------------------------------ Jobangebote (Echte Karriere)
 

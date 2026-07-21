@@ -102,6 +102,8 @@ func _create_player(world: Dictionary, club: ClubData, pos: String, boost: int =
 	var target := clampi(club.base_strength + randi_range(-9, 7) + boost, 30, 94)
 	p.attributes = PlayerData.make_attributes(pos, target)
 	p.recompute_strength()
+	p.talent = PlayerData.roll_talent()
+	p.potential = mini(96, p.strength + PlayerData.POTENTIAL_BONUS[p.talent - 1])
 	p.form = randf_range(0.9, 1.1)
 	p.stamina = clampi(randi_range(45, 90) - (8 if p.age >= 31 else 0), 30, 95)
 	p.contract_years = randi_range(1, 4)
@@ -124,6 +126,8 @@ func create_youth_player(world: Dictionary, club: ClubData, pos: String, bonus: 
 	var target := clampi(club.base_strength + randi_range(-16, -4) + bonus, 28, 90)
 	p.attributes = PlayerData.make_attributes(pos, target)
 	p.recompute_strength()
+	p.talent = PlayerData.roll_talent()
+	p.potential = mini(96, p.strength + PlayerData.POTENTIAL_BONUS[p.talent - 1])
 	p.form = randf_range(0.9, 1.1)
 	p.stamina = randi_range(55, 90)
 	p.contract_years = 3

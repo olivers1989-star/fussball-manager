@@ -541,7 +541,7 @@ func _finalize() -> void:
 	for pid in lineup_a:
 		var p: PlayerData = players[pid]
 		p.form = clampf(p.form + delta_a + _rng.randf_range(-0.015, 0.015), 0.8, 1.2)
-	# Frische & Noten für alle Eingesetzten
+	# Frische, Noten und Einsatzstatistik für alle Eingesetzten
 	for pid in _appeared:
 		var p: PlayerData = players[pid]
 		p.condition = cond[pid]
@@ -551,6 +551,8 @@ func _finalize() -> void:
 			result_adj = -0.4 if ((hg > ag) == is_home_player) else 0.4
 		var day_adj: float = (1.0 - dayform[pid]) * 8.0   # guter Tag = bessere Note
 		p.last_rating = clampf(3.5 + _note_adj.get(pid, 0.0) + result_adj + day_adj + _rng.randf_range(-0.4, 0.4), 1.0, 6.0)
+		p.matches_season += 1
+		p.ratings_sum += p.last_rating
 
 func _emit(kind: String, text: String) -> void:
 	events.append({"min": maxi(minute, 1), "kind": kind, "text": text})

@@ -109,9 +109,11 @@ func _player_row(p: PlayerData, c: ClubData) -> PanelContainer:
 	sub.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	name_box.add_child(sub)
 
-	# Stärke
+	# Stärke & Talent
 	var strength_box := _stat_box("Stärke", str(p.strength), 60)
 	line.add_child(strength_box)
+	var talent_box := _stat_box("Talent", p.talent_stars(), 92)
+	line.add_child(talent_box)
 
 	# Frische-Balken
 	var cond_box := VBoxContainer.new()

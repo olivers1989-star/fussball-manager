@@ -104,6 +104,8 @@ var pos: String = "ZM"
 var age: int = 25
 var strength: int = 60        # Gesamtstärke, aus den Attributen berechnet
 var attributes := {}          # Attribut-Schlüssel -> Wert (siehe ATTRIBUTES)
+var talent: int = 3           # Talentstufe 1–5 Sterne: bestimmt Entwicklungstempo und Potenzial
+var potential: int = 70       # Stärke-Obergrenze der Karriere (aus Talent abgeleitet)
 var form: float = 1.0         # ca. 0.8..1.2, verändert sich von Spiel zu Spiel
 var stamina: int = 65         # Ausdauer 30..95: wie schnell die Frische im Spiel sinkt
 var condition: float = 100.0  # Frische 0..100: regeneriert zwischen den Spieltagen
@@ -118,6 +120,8 @@ var club_id: int = -1
 var goals_season: int = 0
 var yellow_cards: int = 0
 var red_cards: int = 0
+var matches_season: int = 0   # Einsätze diese Saison (treiben die Entwicklung)
+var ratings_sum: float = 0.0  # Summe der Spielnoten (für die Durchschnittsnote)
 
 func full_name() -> String:
 	return "%s %s" % [first_name, last_name]
@@ -128,6 +132,45 @@ func attr(key: String) -> int:
 ## Positionsgruppe (TW/AB/MF/ST) – Grundlage für Engine und Wechselregeln.
 func group() -> String:
 	return GROUP_OF[pos]
+
+## Wie viel Luft das Talent nach oben lässt (auf die Stärke bei Erstellung).
+const POTENTIAL_BONUS := [4, 7, 10, 14, 19]
+
+## Talentstufe würfeln: 3★ ist der Normalfall, 5★ selten.
+static func roll_talent() -> int:
+	var roll := randf()
+	if roll < 0.12:
+		return 1
+	if roll < 0.40:
+		return 2
+	if roll < 0.74:
+		return 3
+	if roll < 0.92:
+		return 4
+	return 5
+
+func talent_stars() -> String:
+	return "★".repeat(talent) + "☆".repeat(5 - talent)
+
+func avg_rating() -> float:
+	return (ratings_sum / matches_season) if matches_season > 0 else 0.0
+
+## Entwickelt die Stärke gezielt um ~delta Punkte (positiv oder negativ),
+## indem bevorzugt positionsrelevante Attribute verändert werden.
+func develop_by_strength(delta: float) -> void:
+	var whole := int(absf(delta))
+	var target := whole + (1 if randf() < absf(delta) - whole else 0)
+	if target == 0:
+		return
+	var dir := 1 if delta > 0.0 else -1
+	var start := strength
+	var relevant: Array = STRENGTH_WEIGHTS[pos].keys()
+	var guard := 0
+	while absi(strength - start) < target and guard < 300:
+		var key: String = relevant.pick_random() if randf() < 0.85 else ATTRIBUTES.keys().pick_random()
+		attributes[key] = clampi(attr(key) + dir, 5, 96)
+		recompute_strength()
+		guard += 1
 
 ## Marktgerechtes Monatsgehalt: ca. 2,5 % des Marktwerts.
 func expected_salary() -> int:
@@ -195,17 +238,23 @@ func market_value() -> int:
 		age_factor = 1.2
 	elif age <= 31:
 		age_factor = 0.9
+	# Junges Toptalent kostet Aufpreis, geringes Talent drückt den Preis
+	if age <= 23:
+		age_factor *= 0.8 + talent * 0.1
 	return maxi(int(round(base * age_factor / 1000.0)) * 1000, 25000)
 
 func reset_season_stats() -> void:
 	goals_season = 0
 	yellow_cards = 0
 	red_cards = 0
+	matches_season = 0
+	ratings_sum = 0.0
 
 func to_dict() -> Dictionary:
 	return {
 		"id": id, "fn": first_name, "ln": last_name, "pos": pos, "age": age,
-		"str": strength, "attrs": attributes, "form": form, "sta": stamina, "cond": condition,
+		"str": strength, "attrs": attributes, "tal": talent, "pot": potential,
+		"ms": matches_season, "rs": ratings_sum, "form": form, "sta": stamina, "cond": condition,
 		"inj": injury_matchdays, "sus": suspended_matchdays, "note": last_rating, "cy": contract_years, "sal": salary,
 		"club": club_id, "g": goals_season, "yc": yellow_cards, "rc": red_cards,
 	}
@@ -227,6 +276,14 @@ static func from_dict(d: Dictionary) -> PlayerData:
 	for key in ATTRIBUTES:
 		p.attributes[key] = int(saved_attrs.get(key, defaults[key]))
 	p.recompute_strength()
+	p.talent = int(d.get("tal", 0))
+	if p.talent < 1 or p.talent > 5:
+		p.talent = roll_talent()
+	p.potential = int(d.get("pot", 0))
+	if p.potential <= 0:
+		p.potential = mini(96, p.strength + POTENTIAL_BONUS[p.talent - 1])
+	p.matches_season = int(d.get("ms", 0))
+	p.ratings_sum = float(d.get("rs", 0.0))
 	p.form = float(d.form)
 	p.stamina = int(d.get("sta", 65))
 	p.condition = float(d.get("cond", 100.0))

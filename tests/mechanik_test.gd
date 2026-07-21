@@ -190,33 +190,57 @@ func _check_frische_form() -> void:
 	assert(tired.condition > before_regen)
 
 func _check_entwicklung_marktwert() -> void:
-	# Junges Talent mit hoher Entschlossenheit über 3 Saisonwechsel verfolgen
-	var talent: PlayerData = null
-	var veteran: PlayerData = null
+	# Kohorten-Experiment: alle jungen Spieler abwechselnd auf 5★ und 1★ setzen,
+	# 2 Saisons simulieren, Entwicklungsunterschied messen. Dazu Veteranen-Abbau.
+	Game.setup = {"name": "Labor", "mode": "vereinsauswahl"}
+	Game.new_game(1)
+	world = Game.world
+	var five := {}
+	var one := {}
+	var vets := {}
+	var flip := true
 	for pid in world.players:
 		var p: PlayerData = world.players[pid]
-		if talent == null and p.age <= 20 and p.attr("entschlossenheit") >= 60 and p.strength <= 78:
-			talent = p
-		if veteran == null and p.age >= 32:
-			veteran = p
-	assert(talent != null and veteran != null)
-	var t_str := talent.strength
-	var t_val := talent.market_value()
-	var v_str := veteran.strength
-	print("Talent (%d J., Stärke %d, Wert %s) und Routinier (%d J., Stärke %d) vor 3 Saisons" % [
-		talent.age, t_str, Fmt.money(t_val), veteran.age, v_str])
-	for season in 3:
+		if p.age <= 21:
+			if flip:
+				p.talent = 5
+				p.potential = mini(96, p.strength + 19)
+				five[pid] = p.strength
+			else:
+				p.talent = 1
+				p.potential = mini(96, p.strength + 4)
+				one[pid] = p.strength
+			flip = not flip
+		elif p.age >= 31 and p.age <= 32:
+			vets[pid] = p.strength
+	for season in 2:
 		for md in 34:
 			Game.play_matchday()
 		Game.end_season()
-	var talent_alive: bool = world.players.has(talent.id)
-	print("Talent nach 3 Saisons: %d J., Stärke %d -> %d, Marktwert %s -> %s" % [
-		talent.age, t_str, talent.strength, Fmt.money(t_val), Fmt.money(talent.market_value())])
-	assert(talent_alive)
-	assert(talent.strength > t_str)
-	assert(talent.market_value() > t_val)
-	if world.players.has(veteran.id):
-		print("Routinier nach 3 Saisons: %d J., Stärke %d -> %d (Abbau)" % [veteran.age, v_str, veteran.strength])
-		assert(veteran.strength <= v_str)
-	else:
-		print("Routinier hat inzwischen seine Karriere beendet – auch das ist Entwicklung.")
+	var gain5 := _avg_gain(five)
+	var gain1 := _avg_gain(one)
+	var vet_gain := _avg_gain(vets)
+	print("Entwicklung über 2 Saisons: 5★-Talente Ø %+.1f, 1★-Talente Ø %+.1f, Routiniers (31/32 J.) Ø %+.1f Stärke" % [gain5, gain1, vet_gain])
+	assert(gain5 > gain1 + 1.0)
+	assert(gain5 >= 2.0)
+	assert(vet_gain < 0.0)
+	# Marktwert des besten 5★-Aufsteigers
+	var best_pid := -1
+	var best_gain := -99
+	for pid in five:
+		if world.players.has(pid) and world.players[pid].strength - five[pid] > best_gain:
+			best_gain = world.players[pid].strength - five[pid]
+			best_pid = pid
+	var star: PlayerData = world.players[best_pid]
+	print("Bestes 5★-Talent: %s (%s), Stärke %d -> %d (Einsätze letzte Saison wirken), Marktwert jetzt %s" % [
+		star.full_name(), star.pos, five[best_pid], star.strength, Fmt.money(star.market_value())])
+	assert(best_gain >= 4)
+
+func _avg_gain(cohort: Dictionary) -> float:
+	var total := 0.0
+	var count := 0
+	for pid in cohort:
+		if world.players.has(pid):
+			total += world.players[pid].strength - cohort[pid]
+			count += 1
+	return (total / count) if count > 0 else 0.0

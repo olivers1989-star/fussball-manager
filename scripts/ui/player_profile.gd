@@ -56,7 +56,7 @@ func _init() -> void:
 	grid.add_theme_constant_override("h_separation", 18)
 	grid.add_theme_constant_override("v_separation", 6)
 	left.add_child(grid)
-	for entry in [["age", "Alter"], ["strength", "Gesamtstärke"], ["contract", "Vertrag"], ["salary", "Gehalt"],
+	for entry in [["age", "Alter"], ["strength", "Gesamtstärke"], ["talent", "Talent"], ["contract", "Vertrag"], ["salary", "Gehalt"],
 		["value", "Marktwert"], ["status", "Status"]]:
 		var key := Label.new()
 		key.text = entry[1] + ":"
@@ -73,7 +73,7 @@ func _init() -> void:
 	season_grid.add_theme_constant_override("h_separation", 18)
 	season_grid.add_theme_constant_override("v_separation", 6)
 	left.add_child(season_grid)
-	for entry in [["goals", "Tore"], ["cards", "Gelb/Rot"], ["rating", "Letzte Note"]]:
+	for entry in [["matches", "Einsätze"], ["goals", "Tore"], ["cards", "Gelb/Rot"], ["rating", "Ø Note"]]:
 		var key := Label.new()
 		key.text = entry[1] + ":"
 		key.add_theme_color_override("font_color", UITheme.TEXT_DIM)
@@ -160,6 +160,8 @@ func open_for(pid: int) -> void:
 
 	_info.age.text = "%d Jahre" % p.age
 	_info.strength.text = str(p.strength)
+	_info.talent.text = p.talent_stars()
+	_info.talent.add_theme_color_override("font_color", UITheme.WARN if p.talent >= 4 else UITheme.TEXT)
 	_info.contract.text = "bis %s" % Game.contract_until(p)
 	_info.salary.text = "%s/Monat" % Fmt.money(p.salary)
 	_info.value.text = Fmt.money(p.market_value())
@@ -172,9 +174,10 @@ func open_for(pid: int) -> void:
 	else:
 		_info.status.text = "fit"
 		_info.status.add_theme_color_override("font_color", UITheme.ACCENT)
+	_info.matches.text = str(p.matches_season)
 	_info.goals.text = str(p.goals_season)
 	_info.cards.text = "%d / %d" % [p.yellow_cards, p.red_cards]
-	_info.rating.text = ("%.1f" % p.last_rating).replace(".", ",") if p.last_rating > 0.0 else "–"
+	_info.rating.text = ("%.1f" % p.avg_rating()).replace(".", ",") if p.matches_season > 0 else "–"
 
 	_set_bar(_state_bars, "condition", p.condition, "%d%%" % int(p.condition))
 	_set_bar(_state_bars, "form", (p.form - 0.8) / 0.4 * 100.0, Fmt.form_str(p.form))
