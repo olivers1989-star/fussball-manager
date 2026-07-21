@@ -116,6 +116,16 @@ func salaries_per_matchday(all_players: Dictionary) -> int:
 	# Saison = 34 Spieltage über ~12 Monate verteilt
 	return int(salaries_per_month(all_players) * 12.0 / 34.0)
 
+## Gesamtstärke des Vereins: Durchschnitt über ALLE Kaderspieler
+## (nicht nur die aktuelle Spieltagself).
+func overall_strength(all_players: Dictionary) -> float:
+	if player_ids.is_empty():
+		return 0.0
+	var total := 0.0
+	for pid in player_ids:
+		total += all_players[pid].strength
+	return total / player_ids.size()
+
 func squad_strength(all_players: Dictionary) -> float:
 	var eleven := match_lineup(all_players)
 	if eleven.is_empty():

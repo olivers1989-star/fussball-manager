@@ -51,6 +51,11 @@ func generate_world() -> Dictionary:
 	var sponsor_pool := sponsors.duplicate()
 	sponsor_pool.shuffle()
 
+	# Feste Spielerdatenbank: identische Profi-Kader in jedem neuen Spielstand
+	# (editierbar in data/players.json). Nur Jugendspieler werden zufällig erzeugt.
+	var db_players := _load_players_db()
+	world["youth_ids"] = []
+
 	for i in club_defs.size():
 		var def: Dictionary = club_defs[i]
 		var c := ClubData.new()
@@ -72,15 +77,56 @@ func generate_world() -> Dictionary:
 		c.chairman = def.get("chairman", "")
 		world.clubs[c.id] = c
 		world.leagues[c.league_id].club_ids.append(c.id)
-		_generate_squad(world, c)
-		# Jeder Verein startet mit ein paar Nachwuchsspielern (14–18)
+		if db_players.has(c.id):
+			for entry in db_players[c.id]:
+				_create_player_from_db(world, c, entry)
+		else:
+			_generate_squad(world, c)
+		# Jeder Verein startet mit ein paar Nachwuchsspielern (14–18, immer zufällig)
 		for youth_no in 3:
-			create_youth_player(world, c, PlayerData.POSITIONS.pick_random())
+			world.youth_ids.append(create_youth_player(world, c, PlayerData.POSITIONS.pick_random()).id)
 		c.lineup = c.best_eleven(world.players)
 
 	l1.fixtures = ScheduleGen.build_fixtures(l1.club_ids)
 	l2.fixtures = ScheduleGen.build_fixtures(l2.club_ids)
 	return world
+
+## Lädt die feste Spielerdatenbank (data/players.json), gruppiert nach Verein.
+func _load_players_db() -> Dictionary:
+	if not FileAccess.file_exists("res://data/players.json"):
+		return {}
+	var data: Variant = _load_json("res://data/players.json")
+	if not (data is Dictionary) or not data.has("players"):
+		return {}
+	var by_club := {}
+	for entry in data.players:
+		var cid := int(entry.club)
+		if not by_club.has(cid):
+			by_club[cid] = []
+		by_club[cid].append(entry)
+	return by_club
+
+## Erzeugt einen Spieler aus einem Datenbank-Eintrag (fester Kader).
+func _create_player_from_db(world: Dictionary, club: ClubData, entry: Dictionary) -> void:
+	var p := PlayerData.new()
+	p.id = world.next_player_id
+	world.next_player_id += 1
+	p.first_name = entry.fn
+	p.last_name = entry.ln
+	p.pos = entry.pos
+	p.age = int(entry.age)
+	for key in PlayerData.ATTRIBUTES:
+		p.attributes[key] = int(entry.attrs.get(key, 40))
+	p.recompute_strength()
+	p.talent = clampi(int(entry.talent), 1, 5)
+	p.potential = int(entry.potential)
+	p.stamina = int(entry.stamina)
+	p.contract_years = int(entry.contract)
+	p.salary = p.expected_salary()
+	p.form = randf_range(0.9, 1.1)
+	p.club_id = club.id
+	world.players[p.id] = p
+	club.player_ids.append(p.id)
 
 ## Erzeugt einen kompletten Kader für einen Verein (24 Spieler über alle Positionen).
 func _generate_squad(world: Dictionary, club: ClubData) -> void:

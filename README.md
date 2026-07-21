@@ -37,8 +37,9 @@ Das komplette Erscheinungsbild wird zentral in [scripts/ui/ui_theme.gd](scripts/
 
 Alle Stammdaten liegen als editierbare JSON-Dateien in [data/](data/):
 
-- `clubs.json` — Vereine (Name, Kürzel, Stadion, Kapazität, Stärke, Liga, Vereinsfarbe)
-- `names.json` — Vor-/Nachnamen für die Spielergenerierung sowie Sponsorennamen
+- `clubs.json` — Vereine (Name, Kürzel, Stadion, Kapazität, Stärke, Liga, Vereinsfarbe, Vorsitzender)
+- `players.json` — die **feste Spielerdatenbank**: 900 Profispieler mit Namen, Position, Alter, allen 23 Attributen, Talent, Potenzial, Ausdauer und Vertragslaufzeit. Jeder neue Spielstand startet mit exakt diesen Kadern (nur Jugendspieler werden zufällig erzeugt). Grundlage für einen späteren Editor. Neu generieren: Datei löschen und `tests/generate_database.tscn` ausführen.
+- `names.json` — Vor-/Nachnamen für die Spielergenerierung (Jugend) sowie Sponsorennamen
 
 Wer echte Vereins- und Spielernamen möchte, trägt sie einfach dort ein (nur für den Privatgebrauch!).
 
