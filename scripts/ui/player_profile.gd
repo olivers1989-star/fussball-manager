@@ -15,10 +15,12 @@ var _info := {}          # key -> Label
 var _state_bars := {}    # key -> {bar, label}
 var _attr_bars := {}     # key -> {bar, label}
 
+var _tw_column: VBoxContainer
+
 func _init() -> void:
 	title = "Spielerprofil"
 	ok_button_text = "Schließen"
-	min_size = Vector2i(860, 560)
+	min_size = Vector2i(1240, 620)
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 12)
@@ -85,14 +87,22 @@ func _init() -> void:
 	for entry in [["condition", "Frische"], ["form", "Form"], ["stamina", "Ausdauer"]]:
 		left.add_child(_bar_row(entry[0], entry[1], _state_bars))
 
-	# Rechte Spalte: Attribute
-	var right := VBoxContainer.new()
-	right.add_theme_constant_override("separation", 8)
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	columns.add_child(right)
-	right.add_child(_section("Attribute"))
-	for key in PlayerData.ATTRIBUTES:
-		right.add_child(_bar_row(key, PlayerData.ATTRIBUTES[key], _attr_bars))
+	# Attribut-Spalten: Technisch / Mental / Physisch (+ Torwart)
+	for category in ["Technisch", "Mental", "Physisch"]:
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 8)
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		columns.add_child(col)
+		col.add_child(_section(category))
+		for key in PlayerData.CATEGORIES[category]:
+			col.add_child(_bar_row(key, PlayerData.ATTRIBUTES[key], _attr_bars))
+		if category == "Physisch":
+			_tw_column = VBoxContainer.new()
+			_tw_column.add_theme_constant_override("separation", 8)
+			col.add_child(_tw_column)
+			_tw_column.add_child(_section("Torwart"))
+			for key in PlayerData.CATEGORIES.Torwart:
+				_tw_column.add_child(_bar_row(key, PlayerData.ATTRIBUTES[key], _attr_bars))
 
 func _section(text: String) -> Label:
 	var l := Label.new()
@@ -171,4 +181,6 @@ func open_for(pid: int) -> void:
 	_set_bar(_state_bars, "stamina", p.stamina, str(p.stamina))
 	for key in PlayerData.ATTRIBUTES:
 		_set_bar(_attr_bars, key, p.attr(key), str(p.attr(key)))
+	# Torwart-Spezialwerte nur beim Torwart zeigen
+	_tw_column.visible = p.pos == "TW"
 	popup_centered()

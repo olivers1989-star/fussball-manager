@@ -576,9 +576,12 @@ func end_season() -> Dictionary:
 			# Automatische Verlängerung (KI wie Spieler) – Vertragsverhandlungen kommen in einer späteren Ausbaustufe
 			p.contract_years = randi_range(2, 3)
 			p.salary = p.expected_salary()
-		# Entwicklung: Junge verbessern Attribute, Alte bauen ab
+		# Entwicklung: Junge verbessern Attribute (Entschlossene schneller), Alte bauen ab
 		if p.age <= 23:
-			p.develop(randi_range(1, 2), randi_range(1, 3))
+			var tries := randi_range(1, 3)
+			if randf() < p.attr("entschlossenheit") / 160.0:
+				tries += 1
+			p.develop(randi_range(1, 2), tries)
 		elif p.age >= 31:
 			p.develop(-randi_range(1, 2), randi_range(1, 3))
 

@@ -18,50 +18,84 @@ const GROUP_OF := {
 }
 const GROUPS := ["TW", "AB", "MF", "ST"]
 
-## Spielerattribute (1–96). Die Gesamtstärke wird daraus positionsabhängig berechnet,
-## und die Match-Engine rechnet direkt mit den Attributen.
+## Spielerattribute (1–96) in drei Kategorien plus Torwart-Spezialwerte.
+## Die Gesamtstärke wird daraus positionsabhängig berechnet, und JEDES Attribut
+## hat eine konkrete Wirkung in der Match-Engine (siehe match_sim.gd).
 const ATTRIBUTES := {
-	"tempo": "Tempo",
-	"technik": "Technik",
-	"passen": "Passspiel",
+	# Technisch
 	"abschluss": "Abschluss",
-	"zweikampf": "Zweikampf",
+	"dribbling": "Dribbling",
+	"passen": "Passspiel",
+	"technik": "Technik",
+	"flanken": "Flanken",
 	"kopfball": "Kopfball",
+	"zweikampf": "Zweikampf",
+	"standards": "Standards",
+	# Mental
 	"stellung": "Stellungsspiel",
+	"uebersicht": "Übersicht",
+	"entschlossenheit": "Entschlossenheit",
+	"nerven": "Nervenstärke",
+	"aggressivitaet": "Aggressivität",
+	"konzentration": "Konzentration",
+	"fuehrung": "Führungsqualität",
+	"einsatz": "Einsatzbereitschaft",
+	# Physisch
+	"tempo": "Tempo",
+	"kraft": "Kraft",
+	"sprung": "Sprungkraft",
+	"beweglichkeit": "Beweglichkeit",
+	"robust": "Robustheit",
+	# Torwart
 	"reflexe": "Reflexe",
+	"strafraum": "Strafraumbeherrschung",
 }
 
-## Gewichtung der Attribute für die Gesamtstärke je Position.
+const CATEGORIES := {
+	"Technisch": ["abschluss", "dribbling", "passen", "technik", "flanken", "kopfball", "zweikampf", "standards"],
+	"Mental": ["stellung", "uebersicht", "entschlossenheit", "nerven", "aggressivitaet", "konzentration", "fuehrung", "einsatz"],
+	"Physisch": ["tempo", "kraft", "sprung", "beweglichkeit", "robust"],
+	"Torwart": ["reflexe", "strafraum"],
+}
+
+## Gewichtung der Attribute für die Gesamtstärke je Position (Summe = 1.0).
 const STRENGTH_WEIGHTS := {
-	"TW": {"reflexe": 0.6, "stellung": 0.25, "tempo": 0.1, "passen": 0.05},
-	"IV": {"zweikampf": 0.3, "stellung": 0.25, "kopfball": 0.25, "tempo": 0.1, "passen": 0.05, "technik": 0.05},
-	"LV": {"tempo": 0.25, "zweikampf": 0.25, "stellung": 0.2, "passen": 0.15, "technik": 0.1, "kopfball": 0.05},
-	"RV": {"tempo": 0.25, "zweikampf": 0.25, "stellung": 0.2, "passen": 0.15, "technik": 0.1, "kopfball": 0.05},
-	"DM": {"zweikampf": 0.3, "passen": 0.25, "stellung": 0.2, "technik": 0.15, "tempo": 0.1},
-	"ZM": {"passen": 0.3, "technik": 0.25, "stellung": 0.15, "zweikampf": 0.15, "tempo": 0.1, "abschluss": 0.05},
-	"LM": {"tempo": 0.25, "passen": 0.25, "technik": 0.2, "zweikampf": 0.1, "stellung": 0.1, "abschluss": 0.1},
-	"RM": {"tempo": 0.25, "passen": 0.25, "technik": 0.2, "zweikampf": 0.1, "stellung": 0.1, "abschluss": 0.1},
-	"OM": {"technik": 0.3, "passen": 0.3, "abschluss": 0.15, "tempo": 0.15, "stellung": 0.05, "zweikampf": 0.05},
-	"LA": {"tempo": 0.3, "technik": 0.25, "abschluss": 0.2, "passen": 0.15, "kopfball": 0.05, "stellung": 0.05},
-	"RA": {"tempo": 0.3, "technik": 0.25, "abschluss": 0.2, "passen": 0.15, "kopfball": 0.05, "stellung": 0.05},
-	"MS": {"abschluss": 0.35, "kopfball": 0.2, "tempo": 0.2, "technik": 0.1, "stellung": 0.05, "passen": 0.05, "zweikampf": 0.05},
+	"TW": {"reflexe": 0.4, "strafraum": 0.2, "stellung": 0.12, "konzentration": 0.1, "beweglichkeit": 0.1, "nerven": 0.08},
+	"IV": {"zweikampf": 0.22, "stellung": 0.18, "kopfball": 0.14, "kraft": 0.12, "konzentration": 0.1, "sprung": 0.08, "tempo": 0.08, "passen": 0.08},
+	"LV": {"tempo": 0.18, "zweikampf": 0.18, "stellung": 0.14, "flanken": 0.14, "passen": 0.1, "einsatz": 0.1, "technik": 0.08, "konzentration": 0.08},
+	"RV": {"tempo": 0.18, "zweikampf": 0.18, "stellung": 0.14, "flanken": 0.14, "passen": 0.1, "einsatz": 0.1, "technik": 0.08, "konzentration": 0.08},
+	"DM": {"zweikampf": 0.22, "passen": 0.16, "stellung": 0.16, "uebersicht": 0.1, "kraft": 0.1, "einsatz": 0.1, "technik": 0.08, "konzentration": 0.08},
+	"ZM": {"passen": 0.2, "technik": 0.16, "uebersicht": 0.16, "zweikampf": 0.12, "einsatz": 0.12, "stellung": 0.08, "tempo": 0.08, "dribbling": 0.08},
+	"LM": {"tempo": 0.18, "flanken": 0.18, "passen": 0.14, "dribbling": 0.14, "technik": 0.12, "einsatz": 0.1, "uebersicht": 0.07, "zweikampf": 0.07},
+	"RM": {"tempo": 0.18, "flanken": 0.18, "passen": 0.14, "dribbling": 0.14, "technik": 0.12, "einsatz": 0.1, "uebersicht": 0.07, "zweikampf": 0.07},
+	"OM": {"technik": 0.18, "passen": 0.16, "uebersicht": 0.16, "dribbling": 0.14, "abschluss": 0.12, "nerven": 0.08, "tempo": 0.08, "standards": 0.08},
+	"LA": {"tempo": 0.2, "dribbling": 0.18, "flanken": 0.14, "abschluss": 0.14, "technik": 0.12, "beweglichkeit": 0.08, "passen": 0.07, "nerven": 0.07},
+	"RA": {"tempo": 0.2, "dribbling": 0.18, "flanken": 0.14, "abschluss": 0.14, "technik": 0.12, "beweglichkeit": 0.08, "passen": 0.07, "nerven": 0.07},
+	"MS": {"abschluss": 0.26, "kopfball": 0.14, "tempo": 0.12, "nerven": 0.12, "technik": 0.1, "dribbling": 0.08, "kraft": 0.08, "sprung": 0.05, "stellung": 0.05},
 }
 
-## Typisches Attributprofil je Position (Abweichung vom Zielwert).
+## Positionsprofil: nur die markanten Abweichungen vom Zielwert.
+## Nicht gelistete Attribute liegen leicht darunter (siehe _offset_for).
 const ATTR_OFFSETS := {
-	"TW": {"reflexe": 6, "stellung": 2, "tempo": -12, "technik": -8, "passen": -6, "abschluss": -20, "zweikampf": -10, "kopfball": -8},
-	"IV": {"zweikampf": 6, "kopfball": 6, "stellung": 4, "tempo": -4, "technik": -4, "passen": -3, "abschluss": -14, "reflexe": -30},
-	"LV": {"tempo": 4, "zweikampf": 2, "stellung": 2, "passen": 0, "technik": -2, "kopfball": -2, "abschluss": -10, "reflexe": -30},
-	"RV": {"tempo": 4, "zweikampf": 2, "stellung": 2, "passen": 0, "technik": -2, "kopfball": -2, "abschluss": -10, "reflexe": -30},
-	"DM": {"zweikampf": 5, "stellung": 4, "passen": 2, "technik": 0, "tempo": -2, "kopfball": 0, "abschluss": -8, "reflexe": -30},
-	"ZM": {"passen": 5, "technik": 3, "stellung": 1, "zweikampf": 1, "tempo": 0, "abschluss": -4, "kopfball": -4, "reflexe": -30},
-	"LM": {"tempo": 5, "passen": 2, "technik": 1, "abschluss": -4, "zweikampf": -4, "kopfball": -5, "stellung": -3, "reflexe": -30},
-	"RM": {"tempo": 5, "passen": 2, "technik": 1, "abschluss": -4, "zweikampf": -4, "kopfball": -5, "stellung": -3, "reflexe": -30},
-	"OM": {"technik": 5, "passen": 5, "tempo": 1, "abschluss": 0, "zweikampf": -6, "kopfball": -5, "stellung": -3, "reflexe": -30},
-	"LA": {"tempo": 6, "technik": 3, "abschluss": 1, "passen": 0, "zweikampf": -8, "kopfball": -4, "stellung": -5, "reflexe": -30},
-	"RA": {"tempo": 6, "technik": 3, "abschluss": 1, "passen": 0, "zweikampf": -8, "kopfball": -4, "stellung": -5, "reflexe": -30},
-	"MS": {"abschluss": 7, "kopfball": 4, "tempo": 2, "technik": 0, "stellung": -2, "passen": -4, "zweikampf": -8, "reflexe": -30},
+	"TW": {"reflexe": 6, "strafraum": 4, "stellung": 2, "beweglichkeit": 2, "konzentration": 2, "tempo": -10, "dribbling": -12, "abschluss": -18, "flanken": -14, "kopfball": -8, "zweikampf": -10, "standards": -8},
+	"IV": {"zweikampf": 6, "kopfball": 6, "stellung": 5, "kraft": 5, "sprung": 4, "konzentration": 2, "dribbling": -8, "flanken": -8, "abschluss": -12, "standards": -4},
+	"LV": {"tempo": 4, "flanken": 4, "zweikampf": 2, "einsatz": 2, "stellung": 2, "abschluss": -10, "kopfball": -3, "standards": -4},
+	"RV": {"tempo": 4, "flanken": 4, "zweikampf": 2, "einsatz": 2, "stellung": 2, "abschluss": -10, "kopfball": -3, "standards": -4},
+	"DM": {"zweikampf": 5, "stellung": 4, "passen": 2, "kraft": 2, "einsatz": 2, "abschluss": -8, "flanken": -6, "dribbling": -4},
+	"ZM": {"passen": 5, "uebersicht": 4, "technik": 3, "einsatz": 2, "abschluss": -4, "flanken": -4, "kopfball": -4},
+	"LM": {"tempo": 5, "flanken": 5, "dribbling": 3, "passen": 2, "kopfball": -5, "zweikampf": -4, "kraft": -4},
+	"RM": {"tempo": 5, "flanken": 5, "dribbling": 3, "passen": 2, "kopfball": -5, "zweikampf": -4, "kraft": -4},
+	"OM": {"technik": 5, "uebersicht": 5, "passen": 4, "dribbling": 3, "standards": 2, "zweikampf": -6, "kopfball": -5, "kraft": -4},
+	"LA": {"tempo": 6, "dribbling": 5, "flanken": 3, "beweglichkeit": 3, "abschluss": 1, "zweikampf": -8, "kopfball": -4, "kraft": -5},
+	"RA": {"tempo": 6, "dribbling": 5, "flanken": 3, "beweglichkeit": 3, "abschluss": 1, "zweikampf": -8, "kopfball": -4, "kraft": -5},
+	"MS": {"abschluss": 7, "kopfball": 4, "nerven": 3, "kraft": 2, "tempo": 2, "zweikampf": -8, "flanken": -5, "stellung": -3},
 }
+
+static func _offset_for(p_pos: String, key: String) -> int:
+	# Torwart-Spezialwerte sind für Feldspieler sehr niedrig – und umgekehrt
+	if GROUP_OF[p_pos] != "TW" and key in ["reflexe", "strafraum"]:
+		return -30
+	return int(ATTR_OFFSETS[p_pos].get(key, -2))
 
 var id: int = 0
 var first_name: String = ""
@@ -103,8 +137,12 @@ func expected_salary() -> int:
 static func make_attributes(p_pos: String, target: int) -> Dictionary:
 	var attrs := {}
 	for key in ATTRIBUTES:
-		attrs[key] = clampi(target + int(ATTR_OFFSETS[p_pos][key]) + randi_range(-6, 6), 5, 96)
+		attrs[key] = clampi(target + _offset_for(p_pos, key) + randi_range(-6, 6), 5, 96)
 	return attrs
+
+## Kombinierter Wert zweier Attribute (z. B. Kopfball × Sprungkraft).
+func combo(key_a: String, key_b: String, weight_a := 0.6) -> float:
+	return attr(key_a) * weight_a + attr(key_b) * (1.0 - weight_a)
 
 ## Berechnet die Gesamtstärke aus den Attributen (positionsabhängig gewichtet).
 func recompute_strength() -> void:
@@ -177,13 +215,11 @@ static func from_dict(d: Dictionary) -> PlayerData:
 	if p.pos in ["AB", "MF", "ST"]:
 		p.pos = {"AB": "IV", "MF": "ZM", "ST": "MS"}[p.pos]
 	p.strength = int(d.str)
+	# Attribute laden; fehlende (ältere Spielstände) aus Stärke und Position ergänzen
 	var saved_attrs: Dictionary = d.get("attrs", {})
-	if saved_attrs.is_empty():
-		# Alte Spielstände ohne Attribute: aus Stärke und Position ableiten
-		p.attributes = make_attributes(p.pos, p.strength)
-	else:
-		for key in saved_attrs:
-			p.attributes[key] = int(saved_attrs[key])
+	var defaults := make_attributes(p.pos, p.strength)
+	for key in ATTRIBUTES:
+		p.attributes[key] = int(saved_attrs.get(key, defaults[key]))
 	p.recompute_strength()
 	p.form = float(d.form)
 	p.stamina = int(d.get("sta", 65))
