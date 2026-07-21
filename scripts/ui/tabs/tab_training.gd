@@ -6,10 +6,7 @@ var _focus_select: OptionButton
 var _focus_desc: Label
 var _status: Label
 var _tree: Tree
-var _plan_select: OptionButton
-var _plan_desc: Label
 var _opponent_label: Label
-var _plan_hint: Label
 
 func _init() -> void:
 	super()
@@ -37,29 +34,11 @@ func _init() -> void:
 	_status.add_theme_font_size_override("font_size", 18)
 	box.add_child(_status)
 
-	# --- Spielvorbereitung & Matchplan
-	box.add_child(heading("Spielvorbereitung – Matchplan fürs nächste Spiel"))
+	# --- Spielvorbereitung (nur Info – die Wahl passiert im Popup am Vortag)
 	_opponent_label = Label.new()
-	_opponent_label.add_theme_font_size_override("font_size", 17)
+	_opponent_label.add_theme_font_size_override("font_size", 15)
+	_opponent_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	box.add_child(_opponent_label)
-	var plan_row := HBoxContainer.new()
-	plan_row.add_theme_constant_override("separation", 12)
-	box.add_child(plan_row)
-	var plan_label := Label.new()
-	plan_label.text = "Matchplan:"
-	plan_label.add_theme_font_size_override("font_size", 19)
-	plan_row.add_child(plan_label)
-	_plan_select = OptionButton.new()
-	for plan in Game.MATCH_PLANS:
-		_plan_select.add_item(plan)
-	_plan_select.item_selected.connect(_on_plan_changed)
-	plan_row.add_child(_plan_select)
-	_plan_desc = info_label()
-	plan_row.add_child(_plan_desc)
-	_plan_hint = Label.new()
-	_plan_hint.add_theme_font_size_override("font_size", 14)
-	_plan_hint.add_theme_color_override("font_color", UITheme.WARN)
-	box.add_child(_plan_hint)
 
 	box.add_child(heading("Fitnesszustand"))
 	_tree = Tree.new()
@@ -76,31 +55,16 @@ func refresh() -> void:
 			break
 	_focus_desc.text = Game.TRAINING_FOCI[Game.training_focus].desc
 
-	# Matchplan-Bereich
-	for i in _plan_select.item_count:
-		if _plan_select.get_item_text(i) == Game.match_plan:
-			_plan_select.select(i)
-			break
-	_plan_desc.text = Game.MATCH_PLANS[Game.match_plan].desc
+	# Spielvorbereitung: nur Hinweis – gewählt wird im Popup am Vortag des Spiels
 	var f := Game.next_fixture(Game.my_club_id)
 	if f.is_empty():
 		_opponent_label.text = "Kein Spiel mehr in dieser Saison."
-		_plan_hint.text = ""
 	else:
 		var home := int(f.home) == Game.my_club_id
 		var opponent := Game.club(int(f.away) if home else int(f.home))
 		var d := Time.get_datetime_dict_from_unix_time(Game.matchday_date(Game.matchday()))
-		_opponent_label.text = "Nächster Gegner: %s (%s, Platz %d, Stärke ~%d)  ·  %s am %02d.%02d.  ·  Spielvorbereitung am Vortag" % [
-			opponent.name, "Heim" if home else "Auswärts",
-			Game.league(opponent.league_id).position_of(opponent.id), opponent.base_strength,
-			"Anpfiff" if home else "Anpfiff", int(d.day), int(d.month)]
-		var diff := opponent.base_strength - Game.my_club().base_strength
-		if diff >= 4:
-			_plan_hint.text = "Empfehlung: „Konter“ oder „Defensivriegel“ – der Gegner ist deutlich stärker."
-		elif diff <= -4:
-			_plan_hint.text = "Empfehlung: „Offensivpressing“ – der Gegner ist deutlich schwächer."
-		else:
-			_plan_hint.text = "Empfehlung: „Mittelfeldkontrolle“ – ein Duell auf Augenhöhe."
+		_opponent_label.text = "Nächstes Spiel: %s gegen %s am %02d.%02d.  ·  Aktueller Matchplan: „%s“ – gewählt wird in der Spielvorbereitung am Vortag." % [
+			"Heim" if home else "Auswärts", opponent.name, int(d.day), int(d.month), Game.match_plan]
 
 	var squad := Game.my_club().players(Game.world.players)
 	var cond_sum := 0.0
@@ -144,7 +108,3 @@ func refresh() -> void:
 func _on_focus_changed(index: int) -> void:
 	Game.training_focus = _focus_select.get_item_text(index)
 	_focus_desc.text = Game.TRAINING_FOCI[Game.training_focus].desc
-
-func _on_plan_changed(index: int) -> void:
-	Game.match_plan = _plan_select.get_item_text(index)
-	_plan_desc.text = Game.MATCH_PLANS[Game.match_plan].desc
