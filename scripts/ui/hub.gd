@@ -474,6 +474,8 @@ func _update_sim_display() -> void:
 		cell_label.text = "%s\n%02d.%02d." % [Game.WEEKDAYS[int(d.weekday)], int(d.day), int(d.month)]
 		if day_unix == md_date:
 			cell_label.text += "\n⚽"
+		elif md_date > 0 and day_unix == md_date - Game.DAY:
+			cell_label.text += "\n🎯"
 		cell.add_child(cell_label)
 		_sim_strip.add_child(cell)
 

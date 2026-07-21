@@ -37,7 +37,7 @@ func _init() -> void:
 	next.pressed.connect(_shift_month.bind(1))
 	top.add_child(next)
 	var legend := info_label()
-	legend.text = "     ▪ Grün: heutiger Tag   ·   ▪ Vereinsfarbe: Spieltag deines Vereins"
+	legend.text = "     ▪ Grün: heute   ·   ▪ Vereinsfarbe: Spieltag   ·   🎯 Spielvorbereitung   ·   Training an allen übrigen Tagen"
 	top.add_child(legend)
 
 	var header := GridContainer.new()
@@ -91,13 +91,17 @@ func _rebuild() -> void:
 		_grid.remove_child(child)
 		child.free()
 
-	# Spieltage des Monats sammeln: Tag -> {md, fixture}
+	# Spieltage und Spielvorbereitungs-Tage des Monats sammeln
 	var matchdays := {}
+	var prep_days := {}
 	var dates: Array = Game.world.matchday_dates
 	for i in dates.size():
 		var d: Dictionary = Time.get_datetime_dict_from_unix_time(int(dates[i]))
 		if int(d.month) == _view_month and int(d.year) == _view_year:
 			matchdays[int(d.day)] = i
+		var prep: Dictionary = Time.get_datetime_dict_from_unix_time(int(dates[i]) - 86400)
+		if int(prep.month) == _view_month and int(prep.year) == _view_year:
+			prep_days[int(prep.day)] = i
 	var today := Game.date_dict()
 	var is_this_month: bool = int(today.month) == _view_month and int(today.year) == _view_year
 
@@ -147,3 +151,20 @@ func _rebuild() -> void:
 				vs.add_theme_font_size_override("font_size", 13)
 				vs.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 				cell_box.add_child(vs)
+		elif prep_days.has(day):
+			var prep_label := Label.new()
+			prep_label.text = "🎯 Spielvorbereitung"
+			prep_label.add_theme_font_size_override("font_size", 12)
+			prep_label.add_theme_color_override("font_color", UITheme.ACCENT)
+			cell_box.add_child(prep_label)
+			var plan_label := Label.new()
+			plan_label.text = "Plan: %s" % Game.match_plan
+			plan_label.add_theme_font_size_override("font_size", 11)
+			plan_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+			cell_box.add_child(plan_label)
+		else:
+			var training_label := Label.new()
+			training_label.text = "Training: %s" % Game.training_focus
+			training_label.add_theme_font_size_override("font_size", 11)
+			training_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+			cell_box.add_child(training_label)

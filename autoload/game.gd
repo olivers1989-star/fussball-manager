@@ -19,13 +19,27 @@ const SKILLS := {
 const SKILL_POOL := 10   # frei verteilbare Punkte (jede Fähigkeit startet bei 1)
 const SKILL_MAX := 8
 
-## Trainingsschwerpunkte (zwischen den Spieltagen, nur eigener Verein):
-## Effekte werden in _regenerate_players() angewendet.
+## Trainingsschwerpunkte (täglich wirksam, nur eigener Verein):
+## regen = Frische-Bonus/Malus pro Tag, pool = trainierte Attribute,
+## chance = tägliche Verbesserungschance pro Spieler (altersskaliert).
 const TRAINING_FOCI := {
-	"Ausgewogen": "Standardtraining ohne Besonderheiten.",
-	"Kondition": "+8 Frische-Regeneration, Ausdauer der Spieler steigt langsam.",
-	"Regeneration": "+16 Frische-Regeneration, aber keine Entwicklung.",
-	"Leistung": "Formaufbau und Entwicklung junger Spieler, kostet aber Frische (−8 Regeneration).",
+	"Ausgewogen": {"desc": "Solides Standardtraining ohne Schwerpunkte.", "regen": 0.0, "pool": [], "chance": 0.0},
+	"Kondition": {"desc": "Mehr Frische-Regeneration, Ausdauer steigt langsam.", "regen": 1.2, "pool": [], "chance": 0.0},
+	"Regeneration": {"desc": "Maximale Erholung – aber keine Entwicklung.", "regen": 2.3, "pool": [], "chance": 0.0},
+	"Offensive": {"desc": "Abschluss, Dribbling und Technik verbessern sich – kostet Frische.", "regen": -0.8, "pool": ["abschluss", "dribbling", "technik"], "chance": 0.012},
+	"Defensive": {"desc": "Zweikampf, Stellungsspiel und Konzentration verbessern sich – kostet Frische.", "regen": -0.8, "pool": ["zweikampf", "stellung", "konzentration"], "chance": 0.012},
+	"Passspiel": {"desc": "Passspiel und Übersicht verbessern sich – kostet Frische.", "regen": -0.8, "pool": ["passen", "uebersicht"], "chance": 0.012},
+	"Standards": {"desc": "Standards und Flanken verbessern sich.", "regen": -0.5, "pool": ["standards", "flanken"], "chance": 0.012},
+}
+
+## Matchpläne für die Spielvorbereitung: gelten NUR fürs nächste Spiel.
+const MATCH_PLANS := {
+	"Ausgeglichen": {"desc": "Keine besonderen Vorgaben.", "att": 1.0, "mid": 1.0, "def": 1.0, "setpiece": 0.0},
+	"Offensivpressing": {"desc": "Früh stören, viele Angriffe – hinten wird es luftiger.", "att": 1.07, "mid": 1.03, "def": 0.96, "setpiece": 0.0},
+	"Konter": {"desc": "Tief stehen, blitzschnell umschalten – stark gegen Favoriten.", "att": 1.05, "mid": 0.98, "def": 1.04, "setpiece": 0.0},
+	"Defensivriegel": {"desc": "Alles dichtmachen und einen Punkt mitnehmen.", "att": 0.94, "mid": 1.0, "def": 1.08, "setpiece": 0.0},
+	"Mittelfeldkontrolle": {"desc": "Ballbesitz und Rhythmus – das Spiel diktieren.", "att": 1.0, "mid": 1.07, "def": 1.0, "setpiece": 0.0},
+	"Standardfokus": {"desc": "Einstudierte Freistöße und Ecken – doppelt so viele Standards.", "att": 1.0, "mid": 1.0, "def": 1.0, "setpiece": 0.006},
 }
 
 var world := {}
@@ -38,6 +52,7 @@ var game_mode := "vereinsauswahl"   # "angebote" (echte Karriere) | "vereinsausw
 var difficulty := "Normal"
 var reputation := 50.0         # Trainer-Ruf, bestimmt im Angebote-Modus die Jobangebote
 var training_focus := "Ausgewogen"
+var match_plan := "Ausgeglichen"   # Matchplan der Spielvorbereitung (gilt nur fürs nächste Spiel)
 var coach_salary := 20000      # Dein Trainergehalt pro Monat (in der Verhandlung ausgehandelt)
 var coach_contract_years := 2
 var goal_bonus := 0            # Ausgehandelte Erfolgsprämie bei Erreichen des Saisonziels
@@ -69,6 +84,7 @@ func new_game(p_club_id: int) -> void:
 	my_club_id = p_club_id
 	reputation = float(my_club().base_strength)
 	training_focus = "Ausgewogen"
+	match_plan = "Ausgeglichen"
 	coach_salary = int(setup.get("coach_salary", board_salary(my_club().base_strength)))
 	coach_contract_years = int(setup.get("coach_years", 2))
 	goal_bonus = int(setup.get("goal_bonus", 0))
@@ -210,7 +226,15 @@ func advance_day() -> Dictionary:
 		return {"news": [], "decision": {}}
 	world.date = date_unix() + DAY
 	_daily_recovery()
-	return _daily_events()
+	var result := _daily_events()
+	# Spielvorbereitung: der Tag vor dem Spieltag gehört dem Matchplan
+	if days_until_matchday() == 1 and not season_over():
+		var f := next_fixture(my_club_id)
+		if not f.is_empty():
+			var home := int(f.home) == my_club_id
+			var opponent := club(int(f.away) if home else int(f.home))
+			result.news.append(_add_news("training", "Spielvorbereitung auf %s: Matchplan „%s“ wird einstudiert." % [opponent.name, match_plan]))
+	return result
 
 ## Tage bis zum Spieltag durchlaufen (Tests/Schnellsimulation).
 ## Entscheidungen werden dabei automatisch abgelehnt.
@@ -348,18 +372,18 @@ func _daily_recovery() -> void:
 		var regen := 5.0
 		if p.club_id == my_club_id:
 			regen += 0.21 * skill("training")
-			match training_focus:
-				"Kondition":
-					regen += 1.2
-					if p.stamina < 95 and randf() < 0.003:
-						p.stamina += 1
-				"Regeneration":
-					regen += 2.3
-				"Leistung":
-					regen -= 1.2
-					p.form = clampf(p.form + 0.0011, 0.8, 1.2)
-					if p.age <= 26 and randf() < 0.0036:
-						p.develop(1, 1)
+			var focus: Dictionary = TRAINING_FOCI.get(training_focus, TRAINING_FOCI.Ausgewogen)
+			regen += focus.regen
+			if training_focus == "Kondition" and p.stamina < 95 and randf() < 0.003:
+				p.stamina += 1
+			# Schwerpunkt-Training verbessert gezielt Attribute (Junge lernen schneller)
+			var pool: Array = focus.pool
+			if not pool.is_empty():
+				var age_scale := 1.0 if p.age <= 21 else (0.6 if p.age <= 26 else 0.25)
+				if randf() < float(focus.chance) * age_scale:
+					var key: String = pool.pick_random()
+					p.attributes[key] = clampi(p.attr(key) + 1, 3, 99)
+					p.recompute_strength()
 		p.condition = minf(100.0, p.condition + regen)
 
 func next_fixture(cid: int) -> Dictionary:
@@ -395,6 +419,13 @@ func start_matchday() -> Dictionary:
 				my_sim = sim
 			else:
 				others.append(sim)
+	# Einstudierter Matchplan aus der Spielvorbereitung wirkt nur in diesem Spiel
+	if my_sim != null and MATCH_PLANS.has(match_plan):
+		var plan: Dictionary = MATCH_PLANS[match_plan]
+		if my_sim.home.id == my_club_id:
+			my_sim.plan_h = plan
+		else:
+			my_sim.plan_a = plan
 	return {"mine": my_sim, "others": others}
 
 ## Schreibt die zu Ende simulierten Spiele in den Spielplan und schließt den Spieltag ab.
@@ -408,6 +439,8 @@ func finish_matchday(md: Dictionary) -> void:
 		sim.fixture.ag = sim.ag
 	if md.mine != null:
 		_apply_skill_form_effects({"fixture": md.mine.fixture})
+	# Der Matchplan ist verbraucht – nächste Woche neu wählen
+	match_plan = "Ausgeglichen"
 	_heal_and_suspend_tick()
 	_apply_matchday_finances()
 	world.matchday = matchday() + 1
@@ -642,7 +675,7 @@ func _season_development(p: PlayerData) -> float:
 			if p.matches_season >= 5:
 				delta *= clampf(1.0 + (3.2 - p.avg_rating()) * 0.25, 0.8, 1.3)
 		delta *= 1.0 + (p.attr("entschlossenheit") - 50.0) / 500.0
-		if p.club_id == my_club_id and training_focus == "Leistung" and p.age <= 26:
+		if p.club_id == my_club_id and p.age <= 26 and TRAINING_FOCI.get(training_focus, {}).get("chance", 0.0) > 0.0:
 			delta += 0.4
 		# Potenzialbremse: nahe der eigenen Obergrenze wird die Luft dünn
 		var headroom := float(p.potential - p.strength)
@@ -742,6 +775,7 @@ func save_game() -> String:
 			"difficulty": difficulty,
 			"reputation": reputation,
 			"training_focus": training_focus,
+			"match_plan": match_plan,
 			"coach_salary": coach_salary,
 			"coach_years": coach_contract_years,
 			"goal_bonus": goal_bonus,
@@ -802,6 +836,9 @@ func load_game(path: String) -> bool:
 	difficulty = data.meta.get("difficulty", "Normal")
 	reputation = float(data.meta.get("reputation", 50.0))
 	training_focus = data.meta.get("training_focus", "Ausgewogen")
+	if not TRAINING_FOCI.has(training_focus):
+		training_focus = "Ausgewogen"   # alte Spielstände (z. B. "Leistung")
+	match_plan = data.meta.get("match_plan", "Ausgeglichen")
 	coach_salary = int(data.meta.get("coach_salary", 20000))
 	coach_contract_years = int(data.meta.get("coach_years", 2))
 	goal_bonus = int(data.meta.get("goal_bonus", 0))

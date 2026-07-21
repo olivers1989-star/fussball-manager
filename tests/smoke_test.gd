@@ -14,7 +14,8 @@ func _ready() -> void:
 	Game.new_game(1)
 	assert(Game.manager_age() == 2026 - 1980)
 	assert(Game.skill("taktik") == 3)
-	Game.training_focus = "Leistung"
+	Game.training_focus = "Offensive"
+	Game.match_plan = "Konter"
 
 	# Attribute: vollständig vorhanden, Stärke aus Attributen abgeleitet
 	var youth_count := 0

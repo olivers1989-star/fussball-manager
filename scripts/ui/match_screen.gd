@@ -92,9 +92,9 @@ func _build_ui() -> void:
 	box.add_child(_prematch_panel)
 	var compare := Label.new()
 	compare.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	compare.text = "Teamstärke: %.1f  gegen  %.1f\nStadion: %s (%s Plätze)\nDeine Formation: %s" % [
+	compare.text = "Teamstärke: %.1f  gegen  %.1f\nStadion: %s (%s Plätze)\nDeine Formation: %s  ·  Matchplan: %s" % [
 		_my_sim.home.squad_strength(Game.world.players), _my_sim.away.squad_strength(Game.world.players),
-		_my_sim.home.stadium, Fmt.thousands(_my_sim.home.capacity), Game.my_club().formation]
+		_my_sim.home.stadium, Fmt.thousands(_my_sim.home.capacity), Game.my_club().formation, Game.match_plan]
 	compare.add_theme_font_size_override("font_size", 20)
 	_prematch_panel.add_child(compare)
 	var kickoff := Button.new()

@@ -34,6 +34,8 @@ var factor_h := 1.0         # externe Boni (z. B. Trainer-Fähigkeit "Taktik")
 var factor_a := 1.0
 var red_h := 1.0            # Malus nach Platzverweis
 var red_a := 1.0
+var plan_h := {}            # Matchplan aus der Spielvorbereitung (leer = neutral)
+var plan_a := {}
 var subs_h := 0
 var subs_a := 0
 var ai_h := true            # true = KI steuert die Spielweise dieser Seite
@@ -76,8 +78,8 @@ func tick() -> void:
 	_drain_condition()
 	_maybe_injury()
 
-	var rat_h := _ratings(lineup_h, mentality_h, factor_h * red_h, hg < ag)
-	var rat_a := _ratings(lineup_a, mentality_a, factor_a * red_a, ag < hg)
+	var rat_h := _ratings(lineup_h, mentality_h, factor_h * red_h, hg < ag, plan_h)
+	var rat_a := _ratings(lineup_a, mentality_a, factor_a * red_a, ag < hg, plan_a)
 
 	var mid_sum: float = rat_h.mid + rat_a.mid
 	var p_home: float = CHANCE_BASE * (2.0 * rat_h.mid / mid_sum) * HOME_BONUS
@@ -88,10 +90,10 @@ func tick() -> void:
 	elif _rng.randf() < p_away:
 		_chance(false, rat_a, rat_h)
 
-	# Standards: Freistöße und Ecken
-	if _rng.randf() < 0.006:
+	# Standards: Freistöße und Ecken (Standardfokus aus der Vorbereitung erhöht die Rate)
+	if _rng.randf() < 0.006 + float(plan_h.get("setpiece", 0.0)):
 		_set_piece(true, rat_h, rat_a)
-	if _rng.randf() < 0.006:
+	if _rng.randf() < 0.006 + float(plan_a.get("setpiece", 0.0)):
 		_set_piece(false, rat_a, rat_h)
 
 	# Elfmeter (selten)
@@ -377,7 +379,7 @@ const WIDE_POS := ["LV", "RV", "LM", "RM", "LA", "RA"]
 ## - Außenbahnen: Flanken speisen Flankenangriffe (wide/header)
 ## - Team: Führungsqualität (Kapitänseffekt), Entschlossenheit (Aufholjagd),
 ##   Konzentration (Schlussphase der Abwehr)
-func _ratings(lineup: Array, mentality: String, factor: float, trailing: bool) -> Dictionary:
+func _ratings(lineup: Array, mentality: String, factor: float, trailing: bool, plan: Dictionary = {}) -> Dictionary:
 	var gk := 0.0
 	var gk_box := 45.0
 	var gk_reflex := 45.0
@@ -448,9 +450,9 @@ func _ratings(lineup: Array, mentality: String, factor: float, trailing: bool) -
 	var total_f := factor * lead_f * det_f
 	var m: Dictionary = MENTALITIES[mentality]
 	return {
-		"att": (0.6 * att_avg + 0.25 * mf_att_avg + 0.15 * wide_avg) * m.att * total_f,
-		"mid": mid_avg * m.mid * total_f,
-		"def": (0.5 * def_avg + 0.25 * gk_avg + 0.25 * mid_def_avg) * m.def * total_f * late_def,
+		"att": (0.6 * att_avg + 0.25 * mf_att_avg + 0.15 * wide_avg) * m.att * total_f * float(plan.get("att", 1.0)),
+		"mid": mid_avg * m.mid * total_f * float(plan.get("mid", 1.0)),
+		"def": (0.5 * def_avg + 0.25 * gk_avg + 0.25 * mid_def_avg) * m.def * total_f * late_def * float(plan.get("def", 1.0)),
 		"wide": wide_avg,
 		"header": header_avg,
 		"box": gk_box,
