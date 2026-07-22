@@ -69,47 +69,100 @@ class SlotChip extends Button:
 	var zone_pos := ""
 	var pid := -1
 	var tab: TabAufstellung
-	var pos_label: Label
+	var pos_label: Label       # Positions-Kürzel (farbige Pille oben links)
+	var pos_panel: PanelContainer
+	var str_label: Label       # große Stärkezahl oben rechts
 	var name_label: Label
-	var stat_label: Label
+	var fresh_label: Label     # Frische in Prozent, farbig
+	var form_label: Label      # Formpfeil, farbig
 	var fresh_bar: ColorRect
+	var fresh_slot: Control
 
 	func _init(p_tab: TabAufstellung, index: int) -> void:
 		tab = p_tab
 		slot_index = index
-		custom_minimum_size = Vector2(150, 62)
+		custom_minimum_size = Vector2(136, 72)
 		focus_mode = Control.FOCUS_NONE
-		# Klare Karten-Struktur: Positions-Chip oben, Name, Werte, Frische-Balken
-		var v := VBoxContainer.new()
-		v.set_anchors_preset(Control.PRESET_FULL_RECT)
-		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		v.add_theme_constant_override("separation", 1)
+		# Aufgewertete Spielerkarte: Positions-Pille + große Stärke, Name,
+		# Frische/Form als farbige Werte, unten ein Frische-Balken
 		var pad := MarginContainer.new()
 		pad.set_anchors_preset(Control.PRESET_FULL_RECT)
 		pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		for s in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-			pad.add_theme_constant_override(s, 5)
+			pad.add_theme_constant_override(s, 7)
 		add_child(pad)
+		var v := VBoxContainer.new()
+		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_theme_constant_override("separation", 2)
 		pad.add_child(v)
+
+		var top := HBoxContainer.new()
+		top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		top.add_theme_constant_override("separation", 6)
+		v.add_child(top)
+		pos_panel = PanelContainer.new()
+		pos_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pos_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		top.add_child(pos_panel)
 		pos_label = Label.new()
 		pos_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pos_label.add_theme_font_size_override("font_size", 11)
-		pos_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.7))
-		v.add_child(pos_label)
+		pos_label.add_theme_font_size_override("font_size", 12)
+		pos_label.add_theme_color_override("font_color", Color.WHITE)
+		pos_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		pos_label.custom_minimum_size = Vector2(40, 0)
+		pos_panel.add_child(pos_label)
+		var gap := Control.new()
+		gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		top.add_child(gap)
+		str_label = Label.new()
+		str_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		str_label.add_theme_font_size_override("font_size", 21)
+		str_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		top.add_child(str_label)
+
 		name_label = Label.new()
 		name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		name_label.clip_text = true
-		name_label.add_theme_font_size_override("font_size", 15)
+		name_label.add_theme_font_size_override("font_size", 16)
 		v.add_child(name_label)
-		stat_label = Label.new()
-		stat_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		stat_label.add_theme_font_size_override("font_size", 12)
-		stat_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
-		v.add_child(stat_label)
+
+		var bottom := HBoxContainer.new()
+		bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bottom.add_theme_constant_override("separation", 10)
+		v.add_child(bottom)
+		fresh_label = Label.new()
+		fresh_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fresh_label.add_theme_font_size_override("font_size", 12)
+		bottom.add_child(fresh_label)
+		form_label = Label.new()
+		form_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		form_label.add_theme_font_size_override("font_size", 12)
+		bottom.add_child(form_label)
+
+		# Frische-Balken: gefüllter Teil links, Rest als Restfläche (Stretch-Ratios)
+		var bar_row := HBoxContainer.new()
+		bar_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bar_row.add_theme_constant_override("separation", 0)
+		bar_row.custom_minimum_size = Vector2(0, 4)
+		v.add_child(bar_row)
 		fresh_bar = ColorRect.new()
 		fresh_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		fresh_bar.custom_minimum_size = Vector2(0, 3)
-		v.add_child(fresh_bar)
+		fresh_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar_row.add_child(fresh_bar)
+		fresh_slot = ColorRect.new()   # Restfläche (dunkel hinterlegt)
+		fresh_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fresh_slot.color = Color(1, 1, 1, 0.08)
+		fresh_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar_row.add_child(fresh_slot)
+
+	## Balken über Stretch-Ratios: gefüllter Anteil zu Restanteil.
+	func set_fresh(cond: float, color: Color) -> void:
+		fresh_bar.color = color
+		var filled := clampf(cond, 1.0, 100.0)
+		fresh_bar.size_flags_stretch_ratio = filled
+		fresh_slot.size_flags_stretch_ratio = maxf(100.0 - filled, 0.01)
+		fresh_slot.color = Color(1, 1, 1, 0.0) if color.a == 0.0 else Color(1, 1, 1, 0.08)
 
 	func _get_drag_data(_at: Vector2) -> Variant:
 		if pid <= 0:
@@ -378,19 +431,23 @@ func _refresh_chips() -> void:
 					warnings += 1
 			chip.pos_label.text = chip.zone_pos + mark
 			chip.name_label.text = p.last_name
-			chip.stat_label.text = "St %d  ·  %d%%  %s" % [st, int(p.condition), Fmt.form_icon(p.form)]
-			chip.fresh_bar.color = _fresh_color(p.condition)
-			chip.fresh_bar.custom_minimum_size.x = 0.0
-			chip.fresh_bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-			chip.fresh_bar.custom_minimum_size = Vector2(clampf(p.condition, 5.0, 100.0) * 1.36, 3)
+			chip.str_label.text = str(st)
+			chip.str_label.add_theme_color_override("font_color", _strength_color(st))
+			chip.fresh_label.text = "%d%%" % int(p.condition)
+			chip.fresh_label.add_theme_color_override("font_color", _fresh_color(p.condition))
+			chip.form_label.text = Fmt.form_icon(p.form)
+			chip.form_label.add_theme_color_override("font_color", Fmt.form_color(p.form))
+			chip.set_fresh(p.condition, _fresh_color(p.condition))
 			chip.tooltip_text = "%s (%s, %s)\nSpielt %s (%s, %d %% Vertrautheit): Stärke %d – eigene Position %s: %d%s" % [
 				p.full_name(), p.pos, p.nat, chip.zone_pos, fam_note, int(fam * 100.0), st, p.pos, p.strength,
 				("\n" + ", ".join(p.traits)) if not p.traits.is_empty() else ""]
 		else:
 			chip.pos_label.text = chip.zone_pos
 			chip.name_label.text = "– frei –"
-			chip.stat_label.text = ""
-			chip.fresh_bar.color = Color(0, 0, 0, 0)
+			chip.str_label.text = ""
+			chip.fresh_label.text = ""
+			chip.form_label.text = ""
+			chip.set_fresh(0.0, Color(0, 0, 0, 0))
 			chip.tooltip_text = ""
 		_style_chip(chip)
 	var avg := total / 11.0
@@ -417,6 +474,23 @@ func _style_chip(chip: SlotChip) -> void:
 	hover.bg_color = style.bg_color.lightened(0.08)
 	chip.add_theme_stylebox_override("hover", hover)
 	chip.add_theme_stylebox_override("pressed", style)
+	# Positions-Pille in der Farbe der Positionsgruppe
+	var pill := UITheme.box(base.darkened(0.25), 999)
+	pill.content_margin_left = 6
+	pill.content_margin_right = 6
+	pill.content_margin_top = 1
+	pill.content_margin_bottom = 1
+	chip.pos_panel.add_theme_stylebox_override("panel", pill)
+
+## Stärke-Farbe: Weltklasse grün, Durchschnitt neutral, schwach rötlich.
+func _strength_color(st: int) -> Color:
+	if st >= 82:
+		return Color("#4ade80")
+	if st >= 70:
+		return Color("#e2e8f0")
+	if st >= 58:
+		return Color("#facc15")
+	return Color("#f87171")
 
 ## Frische-Farbe: grün (frisch) → gelb → rot (platt).
 func _fresh_color(cond: float) -> Color:
@@ -464,23 +538,37 @@ func _layout_pitch() -> void:
 		var spot: Vector2 = c.lineup_spots[i] if i < c.lineup_spots.size() else Vector2(0.5, 0.5)
 		var pos := Vector2(spot.x * s.x, (1.0 - spot.y) * s.y)
 		chip.position = pos - chip.custom_minimum_size / 2.0
-	# Überlappende Chips sanft auseinanderschieben (nur Anzeige, Spots bleiben)
+	# Überlappende Karten auseinanderschieben (nur Anzeige, Spots bleiben):
+	# jeweils entlang der Achse mit der geringeren Überlappung, damit die
+	# Formation ihre Form behält
 	var chip_size: Vector2 = _chips[0].custom_minimum_size
-	for pass_no in 3:
+	var min_x := chip_size.x + 4.0
+	var min_y := chip_size.y + 4.0
+	for pass_no in 8:
+		var moved := false
 		for i in 11:
 			for j in range(i + 1, 11):
 				var a: SlotChip = _chips[i]
 				var b: SlotChip = _chips[j]
-				var dx: float = absf(a.position.x - b.position.x)
-				var dy: float = absf(a.position.y - b.position.y)
-				if dx < chip_size.x * 0.9 and dy < chip_size.y * 0.9:
-					var push := (chip_size.y * 0.95 - dy) / 2.0 + 1.0
-					if a.position.y <= b.position.y:
-						a.position.y -= push
-						b.position.y += push
-					else:
-						a.position.y += push
-						b.position.y -= push
+				var dx: float = a.position.x - b.position.x
+				var dy: float = a.position.y - b.position.y
+				var ox := min_x - absf(dx)   # Überlappung waagerecht
+				var oy := min_y - absf(dy)   # Überlappung senkrecht
+				if ox <= 0.0 or oy <= 0.0:
+					continue
+				moved = true
+				if ox <= oy:
+					var push_x := ox / 2.0 + 0.5
+					var sign_x := 1.0 if dx >= 0.0 else -1.0
+					a.position.x += push_x * sign_x
+					b.position.x -= push_x * sign_x
+				else:
+					var push_y := oy / 2.0 + 0.5
+					var sign_y := 1.0 if dy >= 0.0 else -1.0
+					a.position.y += push_y * sign_y
+					b.position.y -= push_y * sign_y
+		if not moved:
+			break
 	for i in 11:
 		var chip: SlotChip = _chips[i]
 		chip.position.x = clampf(chip.position.x, 2, s.x - chip_size.x - 2)
@@ -727,23 +815,42 @@ func drop_on_chip(slot: int, data: Dictionary) -> void:
 		"roster":
 			_insert_at_slot(int(data.pid), slot)
 
-## Drop einer Listenzeile auf eine andere: je nach Ziel tauschen/einwechseln.
+## Drop einer Listenzeile auf eine andere: die beiden Spieler tauschen ihre
+## Rollen – egal ob Startelf, Bank oder Reserve.
 func drop_on_roster_player(target_pid: int, data: Dictionary) -> void:
+	var dragged := int(data.get("pid", -1))
+	if dragged <= 0 or dragged == target_pid:
+		return
+	swap_players(dragged, target_pid)
+
+## Universeller Rollentausch zweier Spieler (Startelf-Slot / Bankplatz / Reserve).
+func swap_players(pid_a: int, pid_b: int) -> void:
 	var c := Game.my_club()
-	if int(data.get("pid", -1)) == target_pid:
+	var la := c.lineup.find(pid_a)
+	var lb := c.lineup.find(pid_b)
+	var ba := c.bench.find(pid_a)
+	var bb := c.bench.find(pid_b)
+	var p_a := Game.get_player(pid_a)
+	var p_b := Game.get_player(pid_b)
+	# Wer neu in Elf oder Bank rutscht, muss einsatzbereit sein
+	if (lb >= 0 or bb >= 0) and not p_a.is_available():
+		_message.text = "%s ist nicht einsatzbereit (%s)." % [p_a.full_name(), "verletzt" if p_a.is_injured() else "gesperrt"]
 		return
-	var slot := c.lineup.find(target_pid)
-	if slot >= 0:
-		drop_on_chip(slot, data)
+	if (la >= 0 or ba >= 0) and not p_b.is_available():
+		_message.text = "%s ist nicht einsatzbereit (%s)." % [p_b.full_name(), "verletzt" if p_b.is_injured() else "gesperrt"]
 		return
-	var bench_idx := c.bench.find(target_pid)
-	if bench_idx >= 0:
-		drop_on_bench(bench_idx, data)
+	if la < 0 and ba < 0 and lb < 0 and bb < 0:
+		_message.text = "Beide Spieler sind bereits in der Reserve."
 		return
-	# Ziel ist ein Reservespieler: den gezogenen Spieler in die Reserve schicken
-	var pid_in := int(data.get("pid", -1))
-	if c.lineup.has(pid_in):
-		_message.text = "Ziehe einen Reservespieler auf einen Feld- oder Bankspieler, um ihn einzuwechseln."
+	if la >= 0:
+		c.lineup[la] = pid_b
+	elif ba >= 0:
+		c.bench[ba] = pid_b
+	if lb >= 0:
+		c.lineup[lb] = pid_a
+	elif bb >= 0:
+		c.bench[bb] = pid_a
+	_message.text = "%s ↔ %s getauscht." % [p_a.last_name, p_b.last_name]
 	_refresh_all()
 
 func _insert_at_slot(pid_in: int, slot: int) -> void:
