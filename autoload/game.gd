@@ -365,9 +365,9 @@ func _friendly_request() -> Dictionary:
 	return {
 		"kind": "friendly", "opponent_id": opponent.id, "fee": fee,
 		"title": "Testspiel-Anfrage: %s" % opponent.name,
-		"text": "%s (%s, Kaderstärke %.1f) fragt ein Testspiel für morgen an.\n\nEinnahmen: %s. Testspiele kosten Frische, bringen aber Spielpraxis und Formaufbau – Karten und Tore zählen nicht für die Saison." % [
+		"text": "%s (%s, Mannschaftsstärke %d) fragt ein Testspiel für morgen an.\n\nEinnahmen: %s. Testspiele kosten Frische, bringen aber Spielpraxis und Formaufbau – Karten und Tore zählen nicht für die Saison." % [
 			opponent.name, world.leagues[opponent.league_id].name,
-			opponent.overall_strength(world.players), Fmt.money(fee)],
+			opponent.team_strength(world.players), Fmt.money(fee)],
 		"options": ["Testspiel austragen", "Absagen"],
 	}
 

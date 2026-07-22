@@ -331,7 +331,7 @@ func _team_block(club: ClubData, is_home: bool) -> HBoxContainer:
 	name.text = club.name
 	name.add_theme_font_size_override("font_size", 21)
 	var info := Label.new()
-	info.text = "%s · Kader %.1f" % [club.shape_label(), club.overall_strength(Game.world.players)]
+	info.text = "%s · Stärke %d" % [club.shape_label(), club.team_strength(Game.world.players)]
 	info.add_theme_font_size_override("font_size", 12)
 	info.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	if is_home:
@@ -408,9 +408,9 @@ func _build_prematch() -> PanelContainer:
 	grid.add_theme_constant_override("h_separation", 14)
 	grid.add_theme_constant_override("v_separation", 8)
 	facts.add_child(grid)
-	var str_h := _my_sim.home.overall_strength(Game.world.players)
-	var str_a := _my_sim.away.overall_strength(Game.world.players)
-	_fact_row(grid, "%.1f" % str_h, "Kaderstärke", "%.1f" % str_a, str_h >= str_a)
+	var str_h := _my_sim.home.team_strength(Game.world.players)
+	var str_a := _my_sim.away.team_strength(Game.world.players)
+	_fact_row(grid, str(str_h), "Mannschaftsstärke", str(str_a), str_h >= str_a)
 	_fact_row(grid, _stars(_season_rating(_my_sim.home)), "Saison bisher", _stars(_season_rating(_my_sim.away)), _season_rating(_my_sim.home) >= _season_rating(_my_sim.away))
 	_fact_row(grid, _stars(_form_rating(_my_sim.home)), "Form (letzte 5)", _stars(_form_rating(_my_sim.away)), _form_rating(_my_sim.home) >= _form_rating(_my_sim.away))
 	_fact_row(grid, _my_sim.home.shape_label(), "Ausrichtung", _my_sim.away.shape_label(), true)

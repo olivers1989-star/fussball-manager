@@ -179,9 +179,9 @@ func _refresh_match_card(c: ClubData) -> void:
 		form_row.add_theme_constant_override("separation", 6)
 		_match_inner.add_child(form_row)
 		var info := Label.new()
-		info.text = "%s: Platz %d · Gesamtstärke %.1f · Form" % [
+		info.text = "%s: Platz %d · Mannschaftsstärke %d · Form" % [
 			club.short_name, Game.league(club.league_id).position_of(club.id),
-			club.overall_strength(Game.world.players)]
+			club.team_strength(Game.world.players)]
 		info.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 		form_row.add_child(info)
 		var recent := Game.league(club.league_id).fixtures_of_club(club.id).filter(func(x): return x.played)

@@ -25,6 +25,7 @@ var _crit_values := {}
 var _preset_popup: PopupPanel
 var _preset_list: VBoxContainer
 var _preset_name_edit: LineEdit
+var dragging := false   # true, solange eine Listenzeile gezogen wird
 
 ## Die Kriterien liegen im Spielstand, damit sie erhalten bleiben.
 var _pick_weights: Dictionary:
@@ -38,56 +39,72 @@ class PitchControl extends Control:
 	var tab: TabAufstellung
 
 	func _draw() -> void:
-		var line := Color(1, 1, 1, 0.5)
+		# Maße nach echten Proportionen (Feld 68 × 105 m)
+		var line := Color(1, 1, 1, 0.62)
 		var w := 2.0
-		var inset := 10.0
-		var field := Rect2(Vector2(inset, inset), size - Vector2(inset * 2, inset * 2))
+		var margin := 16.0
+		var fw: float = size.x - margin * 2.0     # Feldbreite
+		var fh: float = size.y - margin * 2.0     # Feldlänge
+		var left := margin
+		var right := size.x - margin
+		var top := margin
+		var bottom := size.y - margin
+		var cx := size.x * 0.5
 
-		# Rasen mit Mähstreifen (quer, wie im Stadion)
-		draw_rect(Rect2(Vector2.ZERO, size), Color("#1c5f31"))
-		var stripes := 10
+		# Rasen: Grundton plus deutlich sichtbare Mähstreifen
+		draw_rect(Rect2(Vector2.ZERO, size), Color("#14532d"))
+		var stripes := 12
 		for i in stripes:
-			var band := Rect2(0, size.y * i / stripes, size.x, size.y / stripes + 1)
-			draw_rect(band, Color("#20693699") if i % 2 == 0 else Color("#1a5a2d99"))
+			var y0: float = margin + fh * i / stripes
+			var band := Rect2(left, y0, fw, fh / stripes + 1.0)
+			draw_rect(band, Color("#2a7d47") if i % 2 == 0 else Color("#246e3e"))
 
-		# Außenlinien und Mittellinie
-		draw_rect(field, line, false, w)
+		# Außenlinie und Mittellinie mit Anstoßkreis
+		draw_rect(Rect2(Vector2(left, top), Vector2(fw, fh)), line, false, w)
 		var cy := size.y * 0.5
-		draw_line(Vector2(inset, cy), Vector2(size.x - inset, cy), line, w)
-		var circle_r: float = minf(size.x, size.y) * 0.115
-		draw_arc(Vector2(size.x * 0.5, cy), circle_r, 0, TAU, 64, line, w)
-		draw_circle(Vector2(size.x * 0.5, cy), 3.0, line)
+		draw_line(Vector2(left, cy), Vector2(right, cy), line, w)
+		var circle_r: float = fw * 0.135          # 9,15 m von 68 m Breite
+		draw_arc(Vector2(cx, cy), circle_r, 0, TAU, 64, line, w)
+		draw_circle(Vector2(cx, cy), 3.0, line)
 
-		# Strafraum, Torraum, Elfmeterpunkt und Strafraumbogen – beide Seiten
-		var box_w := size.x * 0.58
-		var box_h := size.y * 0.155
-		var small_w := size.x * 0.27
-		var small_h := size.y * 0.062
-		var spot_dist := size.y * 0.105
-		var arc_r := size.y * 0.075
-		for bottom in [true, false]:
-			var base_y: float = size.y - inset if bottom else inset
-			var dir: float = -1.0 if bottom else 1.0
-			draw_rect(Rect2(Vector2((size.x - box_w) / 2.0, base_y + (dir * box_h if bottom else 0.0)), Vector2(box_w, box_h)), line, false, w)
-			draw_rect(Rect2(Vector2((size.x - small_w) / 2.0, base_y + (dir * small_h if bottom else 0.0)), Vector2(small_w, small_h)), line, false, w)
-			var spot := Vector2(size.x * 0.5, base_y + dir * spot_dist)
+		# Strafraum, Torraum, Elfmeterpunkt, Strafraumbogen und Tor – beide Seiten
+		var box_w := fw * 0.593                   # 40,3 m breit
+		var box_h := fh * 0.157                   # 16,5 m tief
+		var small_w := fw * 0.269                 # 18,3 m breit
+		var small_h := fh * 0.052                 # 5,5 m tief
+		var spot_dist := fh * 0.105               # 11 m Elfmeterpunkt
+		var arc_r := fw * 0.135                   # 9,15 m Radius
+		var goal_w := fw * 0.108                  # 7,32 m Torbreite
+		for is_bottom in [true, false]:
+			var base_y: float = bottom if is_bottom else top
+			var dir: float = -1.0 if is_bottom else 1.0   # ins Feld hinein
+			# Strafraum und Torraum (von der Grundlinie ins Feld)
+			var box_y: float = base_y - box_h if is_bottom else base_y
+			draw_rect(Rect2(Vector2(cx - box_w / 2.0, box_y), Vector2(box_w, box_h)), line, false, w)
+			var small_y: float = base_y - small_h if is_bottom else base_y
+			draw_rect(Rect2(Vector2(cx - small_w / 2.0, small_y), Vector2(small_w, small_h)), line, false, w)
+			# Elfmeterpunkt
+			var spot := Vector2(cx, base_y + dir * spot_dist)
 			draw_circle(spot, 2.5, line)
-			# Strafraumbogen (nur der Teil außerhalb des Strafraums)
-			var start_angle: float = -0.62 if bottom else TAU / 2.0 - 0.62
-			draw_arc(spot, arc_r, start_angle, start_angle + 1.24, 32, line, w)
-			# Tor
-			var goal_w := size.x * 0.17
-			draw_rect(Rect2(Vector2((size.x - goal_w) / 2.0, base_y + (0.0 if bottom else -6.0)), Vector2(goal_w, 6.0)), Color(1, 1, 1, 0.75), false, 2.5)
+			# Strafraumbogen: nur der Teil, der aus dem Strafraum herausragt.
+			# Der Bogen öffnet sich zur Feldmitte hin.
+			var box_edge: float = base_y + dir * box_h
+			var dy: float = absf(box_edge - spot.y)
+			if arc_r > dy:
+				var half := acos(clampf(dy / arc_r, -1.0, 1.0))
+				var center_angle: float = -PI / 2.0 if is_bottom else PI / 2.0
+				draw_arc(spot, arc_r, center_angle - half, center_angle + half, 32, line, w)
+			# Tor (steht außerhalb der Grundlinie)
+			var goal_depth := 7.0
+			var goal_y: float = base_y if is_bottom else base_y - goal_depth
+			draw_rect(Rect2(Vector2(cx - goal_w / 2.0, goal_y), Vector2(goal_w, goal_depth)), Color(1, 1, 1, 0.85), false, 2.5)
 
-		# Eckbögen
-		for corner in [Vector2(inset, inset), Vector2(size.x - inset, inset),
-			Vector2(inset, size.y - inset), Vector2(size.x - inset, size.y - inset)]:
-			draw_arc(corner, 12.0, 0, TAU, 24, line, 1.5)
-
-		# Zonen-Reihen dezent andeuten (Abwehr / Mittelfeld / Angriff)
-		var zone := Color(1, 1, 1, 0.07)
-		draw_line(Vector2(inset, size.y * (1.0 - 0.38)), Vector2(size.x - inset, size.y * (1.0 - 0.38)), zone, 1.0)
-		draw_line(Vector2(inset, size.y * (1.0 - 0.74)), Vector2(size.x - inset, size.y * (1.0 - 0.74)), zone, 1.0)
+		# Eckbögen: Viertelkreise, die ins Feld zeigen
+		var corner_r := fw * 0.028
+		draw_arc(Vector2(left, top), corner_r, 0, PI / 2.0, 12, line, 1.5)
+		draw_arc(Vector2(right, top), corner_r, PI / 2.0, PI, 12, line, 1.5)
+		draw_arc(Vector2(right, bottom), corner_r, PI, PI * 1.5, 12, line, 1.5)
+		draw_arc(Vector2(left, bottom), corner_r, PI * 1.5, TAU, 12, line, 1.5)
 
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
 		return data is Dictionary and data.get("kind", "") in ["slot", "bench", "roster"]
@@ -254,6 +271,7 @@ class RosterRow extends PanelContainer:
 		if not Game.get_player(pid).is_available():
 			return null
 		tab.make_drag_preview(self, pid)
+		tab.dragging = true
 		# Startelf-Spieler als "slot" ziehen (verschieben), sonst als "roster" (einwechseln)
 		var lineup: Array = Game.my_club().lineup
 		if lineup.has(pid):
@@ -275,15 +293,22 @@ class RosterRow extends PanelContainer:
 		modulate = Color.WHITE
 		tab.drop_on_roster_player(pid, data)
 
+	## Wichtig: Die Auswahl erfolgt erst beim LOSLASSEN. Würde schon der
+	## Mausdruck die Liste neu aufbauen, wäre diese Zeile weg, bevor Godot
+	## einen Drag starten kann – dann ließe sich in der Liste nichts ziehen.
 	func _gui_input(event: InputEvent) -> void:
-		if event is InputEventMouseButton and event.pressed:
-			if event.button_index == MOUSE_BUTTON_RIGHT:
+		if event is not InputEventMouseButton:
+			return
+		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+			tab._profile.open_for(pid)
+		elif event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed and event.double_click:
 				tab._profile.open_for(pid)
-			elif event.button_index == MOUSE_BUTTON_LEFT:
-				if event.double_click:
-					tab._profile.open_for(pid)
-				else:
-					tab.select_player(pid)
+			elif not event.pressed:
+				if tab.dragging:       # gerade gezogen – keine zusätzliche Auswahl
+					tab.dragging = false
+					return
+				tab.select_player(pid)
 
 # ------------------------------------------------------------------ Aufbau
 

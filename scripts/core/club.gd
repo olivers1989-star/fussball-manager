@@ -312,6 +312,27 @@ func overall_strength(all_players: Dictionary) -> float:
 		total += all_players[pid].strength
 	return total / player_ids.size()
 
+## MANNSCHAFTSSTÄRKE – die zentrale Kennzahl des Spiels:
+## Summe der Stärken der elf aufgestellten Spieler AUF IHREN POSITIONEN
+## (inkl. Abzug für positionsfremde Aufstellung). Ein Team aus elf
+## 60ern kommt also auf 660. Wird überall einheitlich angezeigt.
+func team_strength(all_players: Dictionary) -> int:
+	var eleven := match_lineup(all_players)
+	if eleven.is_empty():
+		return 0
+	var slots: Array = lineup_slots() if lineup == eleven and lineup_spots.size() == eleven.size() \
+		else FORMATIONS.get(formation, FORMATIONS["4-4-2"])
+	var total := 0
+	for i in eleven.size():
+		var slot: String = slots[i] if i < slots.size() else all_players[eleven[i]].pos
+		total += all_players[eleven[i]].strength_at(slot)
+	return total
+
+## Durchschnittliche Stärke der aufgestellten Elf auf ihren Positionen.
+func team_strength_avg(all_players: Dictionary) -> float:
+	var eleven := match_lineup(all_players)
+	return 0.0 if eleven.is_empty() else float(team_strength(all_players)) / eleven.size()
+
 func squad_strength(all_players: Dictionary) -> float:
 	var eleven := match_lineup(all_players)
 	if eleven.is_empty():

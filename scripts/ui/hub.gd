@@ -613,9 +613,9 @@ func _show_prep_dialog() -> void:
 		else:
 			_prep_form_row.add_child(UITheme.mini_pill("N", Color("#7f1d1d")))
 
-	var opp_overall := opponent.overall_strength(Game.world.players)
-	var my_overall := Game.my_club().overall_strength(Game.world.players)
-	_prep_details.strength.text = "Kader gesamt: %.1f  ·  dein Kader: %.1f" % [opp_overall, my_overall]
+	var opp_overall := float(opponent.team_strength(Game.world.players))
+	var my_overall := float(Game.my_club().team_strength(Game.world.players))
+	_prep_details.strength.text = "Mannschaftsstärke: %d  ·  deine: %d" % [int(opp_overall), int(my_overall)]
 	var opp_squad := opponent.players(Game.world.players)
 	opp_squad.sort_custom(func(a, b): return a.goals_season > b.goals_season)
 	if not opp_squad.is_empty():
@@ -623,7 +623,7 @@ func _show_prep_dialog() -> void:
 		_prep_details.scorer.text = "%s (%s, %d Tore, Stärke %d)" % [danger.full_name(), danger.pos, danger.goals_season, danger.strength]
 	_prep_details.stadium.text = Game.my_club().stadium if home else opponent.stadium
 
-	var diff := opp_overall - my_overall
+	var diff := (opp_overall - my_overall) / 11.0
 	if diff >= 4.0:
 		_prep_hint.text = "Empfehlung: „Konter“ oder „Defensivriegel“ – der Gegner ist deutlich stärker."
 	elif diff <= -4.0:
