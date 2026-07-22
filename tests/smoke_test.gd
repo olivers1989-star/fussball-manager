@@ -101,9 +101,15 @@ func _ready() -> void:
 	assert(not result2.mine.is_empty())
 	print("Erster Spieltag der neuen Saison simuliert.")
 
+	# Gezielt den eigenen Spielstand laden (im Ordner können andere liegen)
 	var saves := Game.list_saves()
 	assert(not saves.is_empty())
-	assert(Game.load_game(saves[0].path))
+	var own_path := ""
+	for s in saves:
+		if s.path.get_file().get_basename() == save_name:
+			own_path = s.path
+	assert(own_path != "", "Eigener Spielstand '%s' muss auffindbar sein" % save_name)
+	assert(Game.load_game(own_path))
 	assert(Game.season_over())
 	print("Spielstand geladen: %s, Spieltag %d" % [Game.my_club().name, Game.matchday()])
 

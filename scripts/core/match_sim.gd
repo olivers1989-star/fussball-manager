@@ -42,6 +42,7 @@ var subs_h := 0
 var subs_a := 0
 var ai_h := true            # true = KI steuert die Spielweise dieser Seite
 var ai_a := true
+var is_friendly := false    # Testspiel: zählt nicht für Saisonstatistik und Sperren
 
 var cond := {}              # pid -> aktuelle Frische im Spiel (sinkt Minute für Minute)
 var dayform := {}           # pid -> Tagesform 0.94..1.06 (jeden Spieltag neu ausgewürfelt)
@@ -412,7 +413,8 @@ func _flow_commentary(rat_h: Dictionary, rat_a: Dictionary) -> void:
 	_emit("flow", pool.pick_random())
 
 func _goal(for_home: bool, club: ClubData, scorer: PlayerData, template: String) -> void:
-	scorer.goals_season += 1
+	if not is_friendly:
+		scorer.goals_season += 1
 	match_goals[scorer.id] = match_goals.get(scorer.id, 0) + 1
 	_note_adj[scorer.id] = _note_adj.get(scorer.id, 0.0) - 0.7
 	if for_home:
@@ -476,8 +478,9 @@ func _maybe_card_side(card_home: bool) -> void:
 		red_chance += 0.03
 	if _rng.randf() < red_chance:
 		stats["reds_h" if card_home else "reds_a"] += 1
-		p.red_cards += 1
-		p.suspended_matchdays += 2
+		if not is_friendly:   # Testspiel-Karten zählen nicht für Sperren
+			p.red_cards += 1
+			p.suspended_matchdays += 2
 		_note_adj[p.id] = _note_adj.get(p.id, 0.0) + 1.2
 		_emit("red", "ROTE KARTE! %s (%s) muss vom Platz und ist für 2 Spieltage gesperrt!" % [p.full_name(), club.short_name])
 		var ridx := lineup.find(p.id)
@@ -490,6 +493,10 @@ func _maybe_card_side(card_home: bool) -> void:
 			red_h *= 0.86
 		else:
 			red_a *= 0.86
+	elif is_friendly:
+		stats["yellow_h" if card_home else "yellow_a"] += 1
+		_note_adj[p.id] = _note_adj.get(p.id, 0.0) + 0.2
+		_emit("card", "Gelbe Karte für %s (%s)." % [p.full_name(), club.short_name])
 	else:
 		stats["yellow_h" if card_home else "yellow_a"] += 1
 		p.yellow_cards += 1
@@ -778,8 +785,9 @@ func _finalize() -> void:
 			result_adj = -0.4 if ((hg > ag) == is_home_player) else 0.4
 		var day_adj: float = (1.0 - dayform[pid]) * 8.0   # guter Tag = bessere Note
 		p.last_rating = clampf(3.5 + _note_adj.get(pid, 0.0) + result_adj + day_adj + _rng.randf_range(-0.4, 0.4), 1.0, 6.0)
-		p.matches_season += 1
-		p.ratings_sum += p.last_rating
+		if not is_friendly:   # Testspiele zählen nicht für die Saisonstatistik
+			p.matches_season += 1
+			p.ratings_sum += p.last_rating
 	# Positionslernen: Wer auf einer Nebenposition ausläuft, lernt sie dazu.
 	for i in lineup_h.size():
 		players[lineup_h[i]].learn_position(slots_h[i] if i < slots_h.size() else "", 0.014)

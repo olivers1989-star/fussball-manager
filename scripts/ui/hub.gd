@@ -18,6 +18,15 @@ var _budget_label: Label
 var _next_match_label: Label
 var _toast: Label
 var _save_browser: SaveBrowser
+var _talk_overlay: Control
+var _talk_title: Label
+var _talk_sub: Label
+var _talk_says: Label
+var _talk_replies: VBoxContainer
+var _talk_result: Label
+var _talk_close: Button
+var _talk_decision := {}
+var _friendly_dialog: AcceptDialog
 var _menu_dialog: ConfirmationDialog
 var _season_dialog: AcceptDialog
 var _offers_dialog: ConfirmationDialog
@@ -439,6 +448,10 @@ func _sim_tick() -> void:
 		_sim_timer.stop()
 		_prep_pending = r.get("prep", false)
 		_pending_decision = r.decision
+		# Spielergespräche laufen als echtes Gespräch mit Antwortauswahl
+		if str(r.decision.get("kind", "")) == "player_talk":
+			_show_talk_dialog(r.decision)
+			return
 		_decision_dialog.title = r.decision.title
 		_decision_dialog.dialog_text = r.decision.text + "\n"
 		_decision_dialog.ok_button_text = r.decision.options[0]
@@ -638,17 +651,155 @@ func _on_prep_confirmed() -> void:
 func _on_decision(choice: int) -> void:
 	if _pending_decision.is_empty():
 		return
-	var result := Game.resolve_decision(_pending_decision, choice)
+	var decision := _pending_decision
 	_pending_decision = {}
-	if not result.is_empty():
-		_sim_feed.add_item("%s  –  %s" % [result.day, result.text])
+	# Zugesagtes Testspiel wird jetzt wirklich ausgetragen
+	if str(decision.get("kind", "")) == "friendly" and choice == 0:
+		var result := Game.play_friendly(int(decision.opponent_id))
+		_show_friendly_result(result)
+		return
+	var msg := Game.resolve_decision(decision, choice)
+	if not msg.is_empty():
+		_sim_feed.add_item("%s  –  %s" % [msg.day, msg.text])
 	update_topbar()
+	_continue_after_event()
+
+## Nach einem Ereignis: Vorbereitung zeigen oder die Wochensimulation fortsetzen.
+func _continue_after_event() -> void:
 	if _prep_pending:
 		_prep_pending = false
 		_show_prep_dialog()
 		return
 	if _sim_overlay.visible:
 		_sim_timer.start()
+
+# ------------------------------------------------------------------ Spielergespräch
+
+## Echtes Gespräch: Anliegen des Spielers und mehrere Antwortmöglichkeiten.
+func _show_talk_dialog(decision: Dictionary) -> void:
+	if _talk_overlay == null:
+		_build_talk_overlay()
+	var p := Game.get_player(int(decision.pid))
+	var content := Game.talk_content(decision)
+	_talk_decision = decision
+	_talk_title.text = "Gespräch mit %s" % p.full_name()
+	_talk_sub.text = "%s · %d Jahre · Stärke %d · %d Einsätze%s" % [
+		PlayerData.POSITION_NAMES[p.pos], p.age, p.strength, p.matches_season,
+		("  ·  " + ", ".join(p.traits)) if not p.traits.is_empty() else ""]
+	_talk_says.text = "„%s“" % str(content.opening)
+	_talk_result.text = ""
+	for child in _talk_replies.get_children():
+		child.queue_free()
+	var replies: Array = content.replies
+	for i in replies.size():
+		var reply: Dictionary = replies[i]
+		var b := Button.new()
+		b.text = "„%s“\n%s" % [str(reply.text), str(reply.hint)]
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.add_theme_font_size_override("font_size", 14)
+		b.custom_minimum_size = Vector2(0, 52)
+		b.pressed.connect(_on_talk_reply.bind(i))
+		_talk_replies.add_child(b)
+	_talk_close.visible = false
+	_talk_overlay.move_to_front()
+	_talk_overlay.visible = true
+
+func _build_talk_overlay() -> void:
+	_talk_overlay = Control.new()
+	_talk_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_talk_overlay.visible = false
+	add_child(_talk_overlay)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.7)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_talk_overlay.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_talk_overlay.add_child(center)
+	var card := PanelContainer.new()
+	var sb := UITheme.box(UITheme.SURFACE, 14, UITheme.BORDER)
+	sb.set_content_margin_all(22)
+	card.add_theme_stylebox_override("panel", sb)
+	card.custom_minimum_size = Vector2(720, 0)
+	center.add_child(card)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	card.add_child(box)
+	_talk_title = Label.new()
+	_talk_title.add_theme_font_size_override("font_size", 22)
+	_talk_title.add_theme_color_override("font_color", UITheme.ACCENT)
+	box.add_child(_talk_title)
+	_talk_sub = Label.new()
+	_talk_sub.add_theme_font_size_override("font_size", 13)
+	_talk_sub.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	box.add_child(_talk_sub)
+	var says_panel := PanelContainer.new()
+	says_panel.add_theme_stylebox_override("panel", UITheme.box(UITheme.FIELD, 10, UITheme.BORDER, 14))
+	box.add_child(says_panel)
+	_talk_says = Label.new()
+	_talk_says.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_talk_says.add_theme_font_size_override("font_size", 17)
+	says_panel.add_child(_talk_says)
+	var hint := Label.new()
+	hint.text = "Deine Antwort (deine Fähigkeit „Motivation“ entscheidet mit, ob sie ankommt):"
+	hint.add_theme_font_size_override("font_size", 13)
+	hint.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	box.add_child(hint)
+	_talk_replies = VBoxContainer.new()
+	_talk_replies.add_theme_constant_override("separation", 6)
+	box.add_child(_talk_replies)
+	_talk_result = Label.new()
+	_talk_result.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_talk_result.add_theme_font_size_override("font_size", 15)
+	box.add_child(_talk_result)
+	_talk_close = Button.new()
+	_talk_close.text = "Weiter →"
+	_talk_close.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	UITheme.make_primary(_talk_close)
+	_talk_close.pressed.connect(func():
+		_talk_overlay.visible = false
+		_continue_after_event())
+	box.add_child(_talk_close)
+
+func _on_talk_reply(index: int) -> void:
+	var outcome := Game.resolve_talk(_talk_decision, index)
+	for child in _talk_replies.get_children():
+		child.queue_free()
+	_talk_result.text = str(outcome.text)
+	_talk_result.add_theme_color_override("font_color", UITheme.ACCENT if outcome.success else UITheme.DANGER)
+	if not outcome.news.is_empty():
+		_sim_feed.add_item("%s  –  %s" % [outcome.news.day, outcome.news.text])
+	_talk_close.visible = true
+	_refresh_active_screen()
+
+# ------------------------------------------------------------------ Testspiel
+
+## Ergebnis eines ausgetragenen Testspiels mit Torschützen.
+func _show_friendly_result(result: Dictionary) -> void:
+	if _friendly_dialog == null:
+		_friendly_dialog = AcceptDialog.new()
+		_friendly_dialog.title = "Testspiel"
+		_friendly_dialog.ok_button_text = "Weiter"
+		_friendly_dialog.confirmed.connect(_continue_after_event)
+		_friendly_dialog.canceled.connect(_continue_after_event)
+		add_child(_friendly_dialog)
+	var opponent: ClubData = result.opponent
+	var lines: Array = [
+		"%s  %d : %d  %s" % [Game.my_club().name, int(result.hg), int(result.ag), opponent.name],
+		"",
+	]
+	if result.goals.is_empty():
+		lines.append("Torlos – aber die Belastung war das Ziel.")
+	else:
+		for g in result.goals:
+			lines.append("%2d'  %s (%s)" % [int(g.min), str(g.name), Game.my_club().short_name if g.home else opponent.short_name])
+	lines.append("")
+	lines.append("Einnahmen: %s · Tore und Karten zählen nicht für die Saison." % Fmt.money(int(result.fee)))
+	_friendly_dialog.dialog_text = "\n".join(lines)
+	_sim_feed.add_item("Testspiel: %s %d:%d %s" % [Game.my_club().short_name, int(result.hg), int(result.ag), opponent.short_name])
+	update_topbar()
+	_refresh_active_screen()
+	_friendly_dialog.popup_centered()
 
 func _on_sim_pause_toggle() -> void:
 	if _sim_timer.is_stopped():

@@ -216,6 +216,46 @@ func days_until_matchday() -> int:
 		return 0
 	return maxi(0, int((matchday_date(matchday()) - date_unix()) / DAY))
 
+## Realistischer Tagesrhythmus: Was steht an einem beliebigen Kalendertag an?
+## Rückgabe: {kind, text} mit kind aus
+## matchday · prep (Vortag) · rest (Tag nach dem Spiel) · preseason
+## (Sommervorbereitung vor dem 1. Spieltag) · winter (Winterpause) ·
+## free (spielfreier Sonntag) · training · offseason (vor dem Saisonstart).
+func day_kind(unix: int) -> Dictionary:
+	var dates: Array = world.matchday_dates
+	if dates.is_empty():
+		return {"kind": "training", "text": "Training"}
+	var day_start := unix - (unix % DAY)
+	var first := int(dates[0])
+	var last := int(dates[dates.size() - 1])
+	# Spieltag / Vortag / Tag danach
+	for i in dates.size():
+		var md_day := int(dates[i]) - (int(dates[i]) % DAY)
+		if day_start == md_day:
+			return {"kind": "matchday", "text": "Spieltag %d" % (i + 1), "matchday": i}
+		if day_start == md_day - DAY:
+			return {"kind": "prep", "text": "Spielvorbereitung", "matchday": i}
+		if day_start == md_day + DAY:
+			return {"kind": "rest", "text": "Regeneration"}
+	# Vor dem ersten Spieltag: Sommerpause bzw. Vorbereitung ab Saisonstart
+	if day_start < first:
+		var start := int(ScheduleGen.season_start(int(world.season_year)))
+		if day_start < start - (start % DAY):
+			return {"kind": "offseason", "text": "Sommerpause"}
+		return {"kind": "preseason", "text": "Vorbereitung"}
+	if day_start > last:
+		return {"kind": "offseason", "text": "Saisonende"}
+	# Längere Lücke zwischen zwei Spieltagen (mehr als 10 Tage) = Winterpause
+	for i in range(dates.size() - 1):
+		var a := int(dates[i])
+		var b := int(dates[i + 1])
+		if b - a > 10 * DAY and day_start > a + DAY and day_start < b - DAY:
+			return {"kind": "winter", "text": "Winterpause"}
+	# Sonntag ohne Spiel ist frei
+	if int(Time.get_datetime_dict_from_unix_time(day_start).weekday) == 0:
+		return {"kind": "free", "text": "Spielfrei"}
+	return {"kind": "training", "text": "Training"}
+
 ## Einen Tag weiterschalten (nicht über den anstehenden Spieltag hinaus).
 ## Rückgabe: {news: [Meldungen], decision: {} oder Entscheidungs-Ereignis}
 func advance_day() -> Dictionary:
@@ -288,82 +328,176 @@ func _daily_events() -> Dictionary:
 
 	# --- Entscheidungs-Ereignisse (max. eines pro Tag)
 	var decision := {}
+	var kind: String = str(day_kind(date_unix()).kind)
 
-	# Transferangebot für einen deiner Spieler
-	if randf() < 0.03 and squad.size() > 16:
-		var p: PlayerData = squad.pick_random()
-		var other_ids: Array = world.clubs.keys().filter(func(cid): return cid != my_club_id and world.clubs[cid].player_ids.size() < 29)
-		if not other_ids.is_empty():
-			var other: ClubData = world.clubs[other_ids.pick_random()]
-			var price := maxi(int(p.market_value() * randf_range(0.9, 1.35) / 10000.0) * 10000, 50000)
-			decision = {
-				"kind": "transfer_offer", "pid": p.id, "club_id": other.id, "price": price,
-				"title": "Transferangebot für %s" % p.full_name(),
-				"text": "%s bietet %s für %s (%s, Stärke %d, Vertrag noch %d J.).\nMarktwert: %s. Verkaufen?" % [
-					other.name, Fmt.money(price), p.full_name(), p.pos, p.strength, p.contract_years, Fmt.money(p.market_value())],
-				"options": ["Verkaufen", "Ablehnen"],
-			}
+	# Testspiel-Anfrage: in der Vorbereitung häufig, während der Saison selten,
+	# und nur mit genug Abstand zum nächsten Pflichtspiel
+	var friendly_chance := 0.0
+	if kind == "preseason":
+		friendly_chance = 0.30
+	elif kind == "winter":
+		friendly_chance = 0.16
+	elif days_until_matchday() >= 4:
+		friendly_chance = 0.05
+	if randf() < friendly_chance:
+		decision = _friendly_request()
 
-	# Freundschaftsspiel-Anfrage (nur wenn genug Abstand zum Spieltag)
-	if decision.is_empty() and randf() < 0.03 and days_until_matchday() >= 3:
-		var fee := int(c.capacity * randf_range(4.0, 6.0) / 10000.0) * 10000
-		decision = {
-			"kind": "friendly", "fee": fee,
-			"title": "Freundschaftsspiel-Anfrage",
-			"text": "Ein Verein aus der Region fragt für morgen ein Freundschaftsspiel an.\nEinnahmen: ca. %s – aber deine Spieler verlieren spürbar Frische." % Fmt.money(fee),
-			"options": ["Zusagen (+%s)" % Fmt.money(fee), "Absagen"],
-		}
-
-	# Unzufriedener Ergänzungsspieler sucht das Gespräch
-	if decision.is_empty() and randf() < 0.03:
-		var bench := squad.filter(func(p): return not c.lineup.has(p.id))
-		if not bench.is_empty():
-			var p: PlayerData = bench.pick_random()
-			decision = {
-				"kind": "player_talk", "pid": p.id,
-				"title": "Spielergespräch",
-				"text": "%s (%s, Stärke %d) ist unzufrieden mit seiner Einsatzzeit und bittet um ein Gespräch." % [
-					p.full_name(), p.pos, p.strength],
-				"options": ["Gespräch suchen", "Abblocken"],
-			}
+	# Spielergespräch: ein Spieler sucht mit einem konkreten Anliegen das Gespräch
+	if decision.is_empty() and randf() < 0.05:
+		decision = _player_talk_request(squad, c)
 
 	return {"news": events, "decision": decision}
 
-## Wendet die Wahl eines Entscheidungs-Ereignisses an. Rückgabe: die Ergebnis-Meldung.
+## Testspiel-Anfrage gegen einen konkreten Gegner (schwächerer Verein der Region).
+func _friendly_request() -> Dictionary:
+	var candidates: Array = []
+	for cid in world.clubs:
+		if cid != my_club_id:
+			candidates.append(cid)
+	if candidates.is_empty():
+		return {}
+	var opponent: ClubData = world.clubs[candidates.pick_random()]
+	var fee := int(my_club().capacity * randf_range(3.0, 6.0) / 10000.0) * 10000
+	return {
+		"kind": "friendly", "opponent_id": opponent.id, "fee": fee,
+		"title": "Testspiel-Anfrage: %s" % opponent.name,
+		"text": "%s (%s, Kaderstärke %.1f) fragt ein Testspiel für morgen an.\n\nEinnahmen: %s. Testspiele kosten Frische, bringen aber Spielpraxis und Formaufbau – Karten und Tore zählen nicht für die Saison." % [
+			opponent.name, world.leagues[opponent.league_id].name,
+			opponent.overall_strength(world.players), Fmt.money(fee)],
+		"options": ["Testspiel austragen", "Absagen"],
+	}
+
+## Spielergespräch mit konkretem Anliegen und mehreren Antwortmöglichkeiten.
+func _player_talk_request(squad: Array, c: ClubData) -> Dictionary:
+	if squad.is_empty():
+		return {}
+	# Anliegen abhängig von der Situation des Spielers
+	var reserves: Array = squad.filter(func(p): return not c.lineup.has(p.id) and p.is_available())
+	var starters: Array = squad.filter(func(p): return c.lineup.has(p.id))
+	var topic := ""
+	var p: PlayerData
+	var roll := randf()
+	if not reserves.is_empty() and roll < 0.45:
+		p = reserves.pick_random()
+		topic = "einsatzzeit"
+	elif not starters.is_empty() and roll < 0.7:
+		p = starters.pick_random()
+		topic = "form" if p.form < 1.0 else "lob"
+	elif not squad.is_empty() and roll < 0.85:
+		p = squad.pick_random()
+		topic = "vertrag"
+	else:
+		p = squad.pick_random()
+		topic = "kritik"
+	return {
+		"kind": "player_talk", "pid": p.id, "topic": topic,
+		"title": "Gespräch mit %s" % p.full_name(),
+	}
+
+## Gesprächsinhalte: Anliegen des Spielers und die möglichen Antworten.
+## Jede Antwort hat eine Grundwirkung auf die Form und eine Erfolgschance,
+## die von der Trainer-Fähigkeit "Motivation" abhängt.
+const TALK_TOPICS := {
+	"einsatzzeit": {
+		"opening": "Trainer, ich sitze seit Wochen nur draußen. Ich will spielen – oder ich muss mir Gedanken machen.",
+		"replies": [
+			{"text": "Du bekommst dein Spiel – ich stelle dich als Nächstes auf.", "risk": 0.0, "good": 0.10, "bad": -0.02, "hint": "Versprechen (wirkt stark, verpflichtet dich)"},
+			{"text": "Zeig es mir im Training, dann kommst du zum Zug.", "risk": 0.25, "good": 0.05, "bad": -0.03, "hint": "Fordernd"},
+			{"text": "Du bist Ergänzungsspieler – akzeptier deine Rolle.", "risk": 0.55, "good": 0.02, "bad": -0.07, "hint": "Hart (riskant)"},
+		],
+	},
+	"form": {
+		"opening": "Bei mir läuft gerade gar nichts. Ich weiß selbst nicht, woran es liegt.",
+		"replies": [
+			{"text": "Kopf hoch – ich glaube an dich, du spielst weiter.", "risk": 0.15, "good": 0.09, "bad": -0.02, "hint": "Rückendeckung"},
+			{"text": "Wir arbeiten im Training gezielt daran.", "risk": 0.20, "good": 0.07, "bad": -0.02, "hint": "Sachlich"},
+			{"text": "Dann nimm dir eine Pause und ordne deine Gedanken.", "risk": 0.35, "good": 0.05, "bad": -0.05, "hint": "Pause verordnen"},
+		],
+	},
+	"lob": {
+		"opening": "Ich fühle mich richtig gut gerade – das wollte ich dir mal sagen.",
+		"replies": [
+			{"text": "Das sehe ich auch – mach genau so weiter!", "risk": 0.05, "good": 0.06, "bad": -0.01, "hint": "Bestätigen"},
+			{"text": "Schön – aber jetzt erst recht Vollgas, nicht nachlassen.", "risk": 0.25, "good": 0.08, "bad": -0.03, "hint": "Anspornen"},
+			{"text": "Freut mich. Bleib bescheiden.", "risk": 0.15, "good": 0.03, "bad": -0.02, "hint": "Zurückhaltend"},
+		],
+	},
+	"vertrag": {
+		"opening": "Mein Berater hat angerufen. Wie sieht der Verein meine Zukunft hier?",
+		"replies": [
+			{"text": "Du bist fester Bestandteil unserer Planung.", "risk": 0.10, "good": 0.07, "bad": -0.02, "hint": "Zusagen"},
+			{"text": "Das entscheiden deine Leistungen der nächsten Wochen.", "risk": 0.30, "good": 0.05, "bad": -0.04, "hint": "Offen halten"},
+			{"text": "Konzentrier dich aufs Spielen, den Rest klärt der Vorstand.", "risk": 0.45, "good": 0.02, "bad": -0.06, "hint": "Abwimmeln"},
+		],
+	},
+	"kritik": {
+		"opening": "Ehrlich gesagt verstehe ich deine Taktik nicht – so kommen wir nicht weiter.",
+		"replies": [
+			{"text": "Erklär mir, was dich stört – ich höre zu.", "risk": 0.15, "good": 0.07, "bad": -0.03, "hint": "Zuhören"},
+			{"text": "Ich erkläre dir die Idee dahinter in Ruhe.", "risk": 0.25, "good": 0.06, "bad": -0.03, "hint": "Überzeugen"},
+			{"text": "Ich entscheide, wie wir spielen. Punkt.", "risk": 0.60, "good": 0.03, "bad": -0.09, "hint": "Machtwort"},
+		],
+	},
+}
+
+## Gesprächsdaten für das UI (Anliegen + Antwortmöglichkeiten).
+func talk_content(decision: Dictionary) -> Dictionary:
+	var topic := str(decision.get("topic", "einsatzzeit"))
+	return TALK_TOPICS.get(topic, TALK_TOPICS["einsatzzeit"])
+
+## Führt eine Gesprächsantwort aus. Rückgabe: {text, success, news}
+func resolve_talk(decision: Dictionary, reply_index: int) -> Dictionary:
+	var p := get_player(int(decision.pid))
+	var content := talk_content(decision)
+	var replies: Array = content.replies
+	var reply: Dictionary = replies[clampi(reply_index, 0, replies.size() - 1)]
+	# Motivation des Trainers senkt das Risiko, dass die Antwort daneben geht
+	var risk: float = maxf(float(reply.risk) - 0.045 * skill("motivation"), 0.0)
+	# Eigene Eigenschaften des Spielers: Hitzköpfe reagieren gereizter
+	if p.has_trait("Hitzkopf"):
+		risk += 0.1
+	if p.has_trait("Führungsspieler"):
+		risk -= 0.05
+	var success := randf() > risk
+	var delta: float = float(reply.good) if success else float(reply.bad)
+	p.form = clampf(p.form + delta, 0.8, 1.2)
+	var text := ""
+	if success:
+		text = "%s nickt: „Verstanden, Trainer.“ – er geht bestärkt aus dem Gespräch." % p.full_name()
+	else:
+		text = "%s bleibt sichtlich unzufrieden – das Gespräch hat ihn nicht erreicht." % p.full_name()
+	var news := _add_news("training", "Gespräch mit %s: %s" % [p.full_name(), "positiv aufgenommen" if success else "verlief schwierig"])
+	return {"text": text, "success": success, "news": news, "delta": delta}
+
+## Trägt ein Testspiel gegen den angefragten Gegner aus (echte Simulation).
+## Rückgabe: {hg, ag, opponent, goals: [{min, name, home}], fee}
+func play_friendly(opponent_id: int) -> Dictionary:
+	var opponent := club(opponent_id)
+	var me := my_club()
+	var sim := MatchSim.new()
+	sim.is_friendly = true
+	sim.setup(me, opponent, world.players)
+	sim.run_full()
+	var fee := int(me.capacity * randf_range(3.0, 6.0) / 10000.0) * 10000
+	me.budget += fee
+	log_transaction("Testspiel gegen %s" % opponent.name, fee)
+	var goals: Array = []
+	for entry in sim.goal_log:
+		goals.append({
+			"min": int(entry.min), "home": bool(entry.home),
+			"name": get_player(int(entry.pid)).full_name(),
+		})
+	_add_news("friendly", "Testspiel: %s %d:%d %s (Einnahmen %s)." % [
+		me.short_name, sim.hg, sim.ag, opponent.short_name, Fmt.money(fee)])
+	return {"hg": sim.hg, "ag": sim.ag, "opponent": opponent, "goals": goals, "fee": fee, "sim": sim}
+
+## Wendet die Wahl eines einfachen Entscheidungs-Ereignisses an.
 func resolve_decision(decision: Dictionary, choice: int) -> Dictionary:
 	match decision.get("kind", ""):
-		"transfer_offer":
-			var p := get_player(int(decision.pid))
-			if choice == 0 and my_club().player_ids.size() > 16 and p.club_id == my_club_id:
-				var buyer: ClubData = world.clubs[int(decision.club_id)]
-				my_club().player_ids.erase(p.id)
-				my_club().lineup.erase(p.id)
-				my_club().budget += int(decision.price)
-				buyer.player_ids.append(p.id)
-				p.club_id = buyer.id
-				p.contract_years = 3
-				log_transaction("Verkauf: %s an %s" % [p.full_name(), buyer.name], int(decision.price))
-				return _add_news("transfer", "%s wechselt für %s zu %s." % [p.full_name(), Fmt.money(int(decision.price)), buyer.name])
-			return _add_news("transfer", "Angebot abgelehnt: %s bleibt im Verein." % p.full_name())
 		"friendly":
 			if choice == 0:
-				var fee := int(decision.fee)
-				my_club().budget += fee
-				log_transaction("Freundschaftsspiel", fee)
-				for p in my_club().players(world.players):
-					p.condition = maxf(0.0, p.condition - 8.0)
-				return _add_news("sponsor", "Freundschaftsspiel absolviert: %s eingenommen, die Beine sind etwas schwerer." % Fmt.money(fee))
-			return _add_news("presse", "Freundschaftsspiel-Anfrage abgesagt – volle Konzentration aufs Training.")
-		"player_talk":
-			var p := get_player(int(decision.pid))
-			if choice == 0:
-				if randf() < 0.40 + 0.06 * skill("motivation"):
-					p.form = clampf(p.form + 0.05, 0.8, 1.2)
-					return _add_news("training", "Dein Gespräch mit %s fruchtet – er brennt auf seine Chance." % p.full_name())
-				p.form = clampf(p.form - 0.02, 0.8, 1.2)
-				return _add_news("training", "Das Gespräch mit %s verlief frostig – er bleibt unzufrieden." % p.full_name())
-			p.form = clampf(p.form - 0.03, 0.8, 1.2)
-			return _add_news("training", "%s fühlt sich übergangen – seine Form leidet." % p.full_name())
+				return {}   # Das Testspiel wird über play_friendly ausgetragen
+			return _add_news("presse", "Testspiel-Anfrage abgesagt – volle Konzentration aufs Training.")
 	return {}
 
 ## Tägliche Erholung und Trainingseffekte. Die Fähigkeit "Training" und der
