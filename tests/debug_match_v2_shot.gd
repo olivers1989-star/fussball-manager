@@ -13,7 +13,14 @@ func _ready() -> void:
 	# Anpfiff und 60 Minuten durchlaufen lassen
 	screen._on_kickoff()
 	screen._timer.stop()
-	for i in 60:
+	for i in 45:
+		screen._on_tick()
+	# Halbzeit: das Aufstellungsfenster öffnet automatisch
+	await get_tree().create_timer(0.8).timeout
+	assert(screen._overlay != null and screen._overlay.visible, "Halbzeit öffnet die Aufstellung nicht")
+	get_viewport().get_texture().get_image().save_png("user://match_halftime_shot.png")
+	screen._close_overlay()
+	for i in 20:
 		screen._on_tick()
 	await get_tree().create_timer(0.8).timeout
 	get_viewport().get_texture().get_image().save_png("user://match_live_shot.png")
