@@ -5,6 +5,15 @@ extends Control
 
 const SPEEDS := {"1×": 0.35, "2×": 0.15, "4×": 0.05}
 
+## Ansprachen vor dem Spiel: mutiger = mehr Wirkung, aber auch mehr Risiko.
+## Die Fähigkeit "Motivation" erhöht die Chance, dass die Ansprache zündet.
+const SPEECHES := [
+	{"text": "Ganz normal weiter – ihr wisst, was zu tun ist.", "bonus": 0.010, "risk": 0.000},
+	{"text": "Gebt euer Bestes – mehr verlange ich nicht.", "bonus": 0.020, "risk": 0.010},
+	{"text": "Wir verlieren das heute nicht!", "bonus": 0.030, "risk": 0.020},
+	{"text": "Heute zeigen wir denen, wer wir sind!", "bonus": 0.045, "risk": 0.035},
+]
+
 ## Anzeige-Koordinaten je Zone (für Teams ohne freie Feldpunkte, z. B. Gegner).
 const ZONE_SPOTS := {
 	"TW": Vector2(0.5, 0.06), "LV": Vector2(0.14, 0.3), "IV": Vector2(0.5, 0.24), "RV": Vector2(0.86, 0.3),
@@ -50,6 +59,8 @@ var _overlay_subs: Label
 var _live_spots := {}         # pid -> Vector2 (Anzeigeposition meiner Elf)
 var _overlay_selected := -1
 var _was_running := false
+var _speech_buttons: Array = []
+var _speech_index := 0
 
 func _ready() -> void:
 	if Game.next_fixture(Game.my_club_id).is_empty():
@@ -220,45 +231,12 @@ func _build_ui() -> void:
 	instant.pressed.connect(_finish_instantly)
 	_controls_bar.add_child(instant)
 
-	# --- Abschluss-Panel: Noten + weitere Ergebnisse
+	# --- Abschluss-Panel: Spielbericht (wird bei Abpfiff gefüllt)
 	_post_panel = VBoxContainer.new()
-	_post_panel.add_theme_constant_override("separation", 12)
+	_post_panel.add_theme_constant_override("separation", 10)
 	_post_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_post_panel.visible = false
 	box.add_child(_post_panel)
-	var post_columns := HBoxContainer.new()
-	post_columns.add_theme_constant_override("separation", 14)
-	post_columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_post_panel.add_child(post_columns)
-
-	var ratings_card := _card_column("📋 Noten deiner Spieler")
-	ratings_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	post_columns.add_child(ratings_card)
-	var ratings_holder: VBoxContainer = ratings_card.get_child(0)
-	var ratings_scroll := ScrollContainer.new()
-	ratings_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	ratings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	ratings_holder.add_child(ratings_scroll)
-	_ratings_box = VBoxContainer.new()
-	_ratings_box.add_theme_constant_override("separation", 3)
-	_ratings_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ratings_scroll.add_child(_ratings_box)
-
-	var others_card := _card_column("⚽ Die weiteren Ergebnisse")
-	others_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	post_columns.add_child(others_card)
-	var others_holder: VBoxContainer = others_card.get_child(0)
-	_other_results = ItemList.new()
-	_other_results.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	others_holder.add_child(_other_results)
-
-	var done := Button.new()
-	done.text = "Weiter zur Zentrale  →"
-	done.add_theme_font_size_override("font_size", 19)
-	done.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	UITheme.make_primary(done)
-	done.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/hub.tscn"))
-	_post_panel.add_child(done)
 
 	_timer = Timer.new()
 	_timer.wait_time = SPEEDS["1×"]
@@ -370,44 +348,177 @@ func _team_block(club: ClubData, is_home: bool) -> HBoxContainer:
 		row.add_child(badge)
 	return row
 
+## Spieltagsankündigung: Wappen mit Tabellenplätzen, Stadion & Datum,
+## Fakten-Vergleich mit Sternen und die Ansprache vor dem Spiel.
 func _build_prematch() -> PanelContainer:
 	var card := PanelContainer.new()
 	var sb := UITheme.box(UITheme.SURFACE, 14, UITheme.BORDER)
-	sb.set_content_margin_all(28)
+	sb.set_content_margin_all(24)
 	card.add_theme_stylebox_override("panel", sb)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 14)
-	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 12)
 	card.add_child(v)
 
-	var title := Label.new()
-	title.text = "Gleich geht's los!"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 24)
-	v.add_child(title)
-	var compare := Label.new()
-	compare.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	compare.text = "Elf-Stärke: %.1f gegen %.1f\nDeine Ausrichtung: %s · Matchplan: %s\n%s (%s Plätze)" % [
-		_my_sim.home.squad_strength(Game.world.players), _my_sim.away.squad_strength(Game.world.players),
-		Game.my_club().shape_label(), Game.match_plan,
-		_my_sim.home.stadium, Fmt.thousands(_my_sim.home.capacity)]
-	compare.add_theme_font_size_override("font_size", 17)
-	compare.add_theme_color_override("font_color", UITheme.TEXT_DIM)
-	v.add_child(compare)
+	var day_label := Label.new()
+	day_label.text = "SPIELTAG %d · %s" % [Game.matchday() + 1, Game.date_label()]
+	day_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	day_label.add_theme_font_size_override("font_size", 13)
+	day_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	v.add_child(day_label)
+
+	# Wappen-Zeile mit Tabellenplätzen
+	var duel := HBoxContainer.new()
+	duel.alignment = BoxContainer.ALIGNMENT_CENTER
+	duel.add_theme_constant_override("separation", 18)
+	v.add_child(duel)
+	duel.add_child(UITheme.club_badge(_my_sim.home.short_name, Color(_my_sim.home.color), 62))
+	var home_name := Label.new()
+	home_name.text = "(%d)  %s" % [_position_of(_my_sim.home), _my_sim.home.name]
+	home_name.add_theme_font_size_override("font_size", 21)
+	duel.add_child(home_name)
+	var vs := Label.new()
+	vs.text = "–"
+	vs.add_theme_font_size_override("font_size", 26)
+	vs.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	duel.add_child(vs)
+	var away_name := Label.new()
+	away_name.text = "%s  (%d)" % [_my_sim.away.name, _position_of(_my_sim.away)]
+	away_name.add_theme_font_size_override("font_size", 21)
+	duel.add_child(away_name)
+	duel.add_child(UITheme.club_badge(_my_sim.away.short_name, Color(_my_sim.away.color), 62))
+
+	var stadium_label := Label.new()
+	stadium_label.text = "%s · %s Plätze · Matchplan: %s" % [_my_sim.home.stadium, Fmt.thousands(_my_sim.home.capacity), Game.match_plan]
+	stadium_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stadium_label.add_theme_font_size_override("font_size", 14)
+	stadium_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	v.add_child(stadium_label)
+
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 16)
+	v.add_child(columns)
+
+	# --- Fakten
+	var facts_card := _card_column("📊 Fakten")
+	facts_card.custom_minimum_size = Vector2(520, 0)
+	columns.add_child(facts_card)
+	var facts: VBoxContainer = facts_card.get_child(0)
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 8)
+	facts.add_child(grid)
+	var str_h := _my_sim.home.overall_strength(Game.world.players)
+	var str_a := _my_sim.away.overall_strength(Game.world.players)
+	_fact_row(grid, "%.1f" % str_h, "Kaderstärke", "%.1f" % str_a, str_h >= str_a)
+	_fact_row(grid, _stars(_season_rating(_my_sim.home)), "Saison bisher", _stars(_season_rating(_my_sim.away)), _season_rating(_my_sim.home) >= _season_rating(_my_sim.away))
+	_fact_row(grid, _stars(_form_rating(_my_sim.home)), "Form (letzte 5)", _stars(_form_rating(_my_sim.away)), _form_rating(_my_sim.home) >= _form_rating(_my_sim.away))
+	_fact_row(grid, _my_sim.home.shape_label(), "Ausrichtung", _my_sim.away.shape_label(), true)
+	_fact_row(grid, "", "Hinspiel: %s" % _first_leg_text(), "", true)
+
+	# --- Ansprache vor dem Spiel
+	var speech_card := _card_column("🗣 Ansprache vor dem Spiel")
+	speech_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns.add_child(speech_card)
+	var speech_box: VBoxContainer = speech_card.get_child(0)
+	for i in SPEECHES.size():
+		var s: Dictionary = SPEECHES[i]
+		var b := Button.new()
+		b.toggle_mode = true
+		b.text = "💬  „%s“" % s.text
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.add_theme_font_size_override("font_size", 14)
+		b.focus_mode = Control.FOCUS_NONE
+		b.pressed.connect(_on_speech_selected.bind(i))
+		speech_box.add_child(b)
+		_speech_buttons.append(b)
+	_speech_buttons[0].set_pressed_no_signal(true)
+	var speech_hint := Label.new()
+	speech_hint.text = "Je mutiger die Ansprache, desto größer Wirkung UND Risiko.\nDeine Fähigkeit „Motivation“ (%d/%d) entscheidet mit, ob sie zündet." % [Game.skill("motivation"), Game.SKILL_MAX]
+	speech_hint.add_theme_font_size_override("font_size", 12)
+	speech_hint.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	speech_box.add_child(speech_hint)
+
+	var buttons := HBoxContainer.new()
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	buttons.add_theme_constant_override("separation", 14)
+	v.add_child(buttons)
+	var back := Button.new()
+	back.text = "← Zurück zur Zentrale"
+	back.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/hub.tscn"))
+	buttons.add_child(back)
 	var kickoff := Button.new()
 	kickoff.text = "⚽  Anpfiff!"
-	kickoff.custom_minimum_size = Vector2(260, 54)
-	kickoff.add_theme_font_size_override("font_size", 24)
-	kickoff.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	kickoff.custom_minimum_size = Vector2(240, 50)
+	kickoff.add_theme_font_size_override("font_size", 22)
 	UITheme.make_primary(kickoff)
 	kickoff.pressed.connect(_on_kickoff)
-	v.add_child(kickoff)
-	var back := Button.new()
-	back.text = "Zurück zur Zentrale"
-	back.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	back.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/hub.tscn"))
-	v.add_child(back)
+	buttons.add_child(kickoff)
 	return card
+
+func _fact_row(grid: GridContainer, left: String, label: String, right: String, home_better: bool) -> void:
+	var l := Label.new()
+	l.text = left
+	l.custom_minimum_size = Vector2(150, 0)
+	l.add_theme_font_size_override("font_size", 15)
+	l.add_theme_color_override("font_color", UITheme.ACCENT if home_better and left != "" else (Color("#e3b341") if left != "" else UITheme.TEXT))
+	grid.add_child(l)
+	var m := Label.new()
+	m.text = label
+	m.custom_minimum_size = Vector2(180, 0)
+	m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	m.add_theme_font_size_override("font_size", 13)
+	m.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	grid.add_child(m)
+	var r := Label.new()
+	r.text = right
+	r.custom_minimum_size = Vector2(150, 0)
+	r.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	r.add_theme_font_size_override("font_size", 15)
+	r.add_theme_color_override("font_color", Color("#e3b341") if home_better else UITheme.ACCENT)
+	grid.add_child(r)
+
+func _stars(value: float) -> String:
+	var n := clampi(int(round(value * 5.0)), 0, 5)
+	return "★".repeat(n) + "☆".repeat(5 - n)
+
+func _position_of(club: ClubData) -> int:
+	return Game.league(club.league_id).position_of(club.id)
+
+## Saisonbewertung 0..1 aus der Punktquote.
+func _season_rating(club: ClubData) -> float:
+	for row in Game.league(club.league_id).table():
+		if int(row.club_id) == club.id:
+			if int(row.played) == 0:
+				return 0.5
+			return clampf(float(row.points) / (int(row.played) * 3.0), 0.0, 1.0)
+	return 0.5
+
+## Formbewertung 0..1 aus den letzten 5 Spielen.
+func _form_rating(club: ClubData) -> float:
+	var recent := Game.league(club.league_id).fixtures_of_club(club.id).filter(func(x): return x.played)
+	var last5 := recent.slice(maxi(0, recent.size() - 5))
+	if last5.is_empty():
+		return 0.5
+	var pts := 0.0
+	for x in last5:
+		var at_home: bool = int(x.home) == club.id
+		var gf: int = int(x.hg) if at_home else int(x.ag)
+		var ga: int = int(x.ag) if at_home else int(x.hg)
+		pts += 1.0 if gf > ga else (0.5 if gf == ga else 0.0)
+	return pts / last5.size()
+
+## Ergebnis des Hinspiels (falls schon gespielt).
+func _first_leg_text() -> String:
+	for x in Game.league(_my_sim.home.league_id).fixtures_of_club(_my_sim.home.id):
+		if int(x.home) == _my_sim.away.id and int(x.away) == _my_sim.home.id and x.played:
+			return "%s %d:%d %s" % [_my_sim.away.short_name, int(x.hg), int(x.ag), _my_sim.home.short_name]
+	return "–"
+
+func _on_speech_selected(index: int) -> void:
+	_speech_index = index
+	for i in _speech_buttons.size():
+		_speech_buttons[i].set_pressed_no_signal(i == index)
 
 # ------------------------------------------------------------------ Ablauf
 
@@ -416,6 +527,18 @@ func _on_kickoff() -> void:
 	_live_box.visible = true
 	_controls_bar.visible = true
 	_score_label.text = "0 : 0"
+	# Ansprache anwenden: Motivation entscheidet, ob sie zündet
+	var speech: Dictionary = SPEECHES[_speech_index]
+	var success := randf() < 0.45 + 0.06 * Game.skill("motivation")
+	var factor := 1.0 + float(speech.bonus) if success else 1.0 - float(speech.risk)
+	if _my_home:
+		_my_sim.factor_h *= factor
+	else:
+		_my_sim.factor_a *= factor
+	if success and float(speech.bonus) > 0.0:
+		_ticker.append_text("[color=#4ade80]🗣 Deine Ansprache zündet – die Mannschaft geht heiß aufs Feld![/color]\n")
+	elif not success and float(speech.risk) > 0.0:
+		_ticker.append_text("[color=#f87171]🗣 Die Ansprache verpufft – einige Spieler wirken verunsichert.[/color]\n")
 	# Anzeigepositionen meiner Elf übernehmen (für das Aufstellungs-Overlay)
 	var c := Game.my_club()
 	var lineup: Array = _my_sim.lineup_h if _my_home else _my_sim.lineup_a
@@ -491,8 +614,147 @@ func _finish() -> void:
 	_controls_bar.visible = false
 	_live_box.visible = false
 	_post_panel.visible = true
-	_fill_ratings()
-	_other_results.clear()
+	_build_report()
+
+# ------------------------------------------------------------------ Spielbericht
+
+## Ausführlicher Bericht nach dem Abpfiff: Torschützen, Spieler des Spiels,
+## komplette Statistik, Noten und die weiteren Ergebnisse.
+func _build_report() -> void:
+	for child in _post_panel.get_children():
+		child.queue_free()
+
+	# Kopf: Endstand mit Halbzeitstand
+	var head_card := _card_column("📰 Spielbericht · %s, Spieltag %d" % [Game.my_league().name, Game.matchday()])
+	_post_panel.add_child(head_card)
+	var head_box: VBoxContainer = head_card.get_child(0)
+	var result_row := HBoxContainer.new()
+	result_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	result_row.add_theme_constant_override("separation", 16)
+	head_box.add_child(result_row)
+	result_row.add_child(UITheme.club_badge(_my_sim.home.short_name, Color(_my_sim.home.color), 42))
+	var res := Label.new()
+	res.text = "%s  %d : %d  %s" % [_my_sim.home.name, _my_sim.hg, _my_sim.ag, _my_sim.away.name]
+	res.add_theme_font_size_override("font_size", 24)
+	result_row.add_child(res)
+	result_row.add_child(UITheme.club_badge(_my_sim.away.short_name, Color(_my_sim.away.color), 42))
+	var ht := Label.new()
+	ht.text = "Halbzeit %d:%d · %s · Spielanteile %d %% : %d %%" % [
+		_my_sim.ht_h, _my_sim.ht_a, _my_sim.home.stadium,
+		int(_my_sim.possession_home() * 100.0), 100 - int(_my_sim.possession_home() * 100.0)]
+	ht.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ht.add_theme_font_size_override("font_size", 13)
+	ht.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	head_box.add_child(ht)
+
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 12)
+	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_post_panel.add_child(columns)
+
+	# Spalte 1: Spielverlauf (Tore) + Spieler des Spiels + Statistik
+	var story_card := _card_column("⚽ Spielverlauf")
+	story_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns.add_child(story_card)
+	var story: VBoxContainer = story_card.get_child(0)
+	if _my_sim.goal_log.is_empty():
+		var none := Label.new()
+		none.text = "Keine Tore – die Abwehrreihen standen sicher."
+		none.add_theme_font_size_override("font_size", 13)
+		none.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		story.add_child(none)
+	for entry in _my_sim.goal_log:
+		var p := Game.get_player(int(entry.pid))
+		var club: ClubData = _my_sim.home if entry.home else _my_sim.away
+		var line := Label.new()
+		line.text = "%2d'  ⚽ %s  %s (%s)" % [int(entry.min), entry.score, p.full_name(), club.short_name]
+		line.add_theme_font_size_override("font_size", 14)
+		var mine: bool = club.id == Game.my_club_id
+		line.add_theme_color_override("font_color", UITheme.ACCENT if mine else UITheme.TEXT)
+		story.add_child(line)
+	# Spieler des Spiels: beste Note aller Beteiligten
+	var best_pid := -1
+	var best_note := 99.0
+	for pid in _my_sim.participants(true) + _my_sim.participants(false):
+		var note: float = Game.get_player(pid).last_rating
+		if note > 0.0 and note < best_note:
+			best_note = note
+			best_pid = pid
+	if best_pid > 0:
+		var star := Game.get_player(best_pid)
+		var star_club := _my_sim.home if _my_sim.home.player_ids.has(best_pid) else _my_sim.away
+		story.add_child(HSeparator.new())
+		var motm := Label.new()
+		motm.text = "🌟 Spieler des Spiels: %s (%s) · Note %s" % [star.full_name(), star_club.short_name, ("%.1f" % best_note).replace(".", ",")]
+		motm.add_theme_font_size_override("font_size", 14)
+		motm.add_theme_color_override("font_color", Color("#e3b341"))
+		story.add_child(motm)
+	story.add_child(HSeparator.new())
+	var stat_grid := GridContainer.new()
+	stat_grid.columns = 3
+	stat_grid.add_theme_constant_override("h_separation", 10)
+	stat_grid.add_theme_constant_override("v_separation", 2)
+	story.add_child(stat_grid)
+	var s: Dictionary = _my_sim.stats
+	for row in [["Chancen", s.chances_h, s.chances_a], ["Ecken", s.corners_h, s.corners_a],
+		["Freistöße", s.freekicks_h, s.freekicks_a], ["Elfmeter", s.penalties_h, s.penalties_a],
+		["Gelbe Karten", s.yellow_h, s.yellow_a], ["Platzverweise", s.reds_h, s.reds_a]]:
+		var l := Label.new()
+		l.text = str(row[1])
+		l.custom_minimum_size = Vector2(30, 0)
+		l.add_theme_font_size_override("font_size", 13)
+		stat_grid.add_child(l)
+		var m := Label.new()
+		m.text = str(row[0])
+		m.custom_minimum_size = Vector2(120, 0)
+		m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		m.add_theme_font_size_override("font_size", 12)
+		m.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		stat_grid.add_child(m)
+		var r := Label.new()
+		r.text = str(row[2])
+		r.add_theme_font_size_override("font_size", 13)
+		stat_grid.add_child(r)
+
+	# Spalte 2: Noten deiner Spieler
+	var ratings_card := _card_column("📋 Noten deiner Spieler")
+	ratings_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns.add_child(ratings_card)
+	var ratings_holder: VBoxContainer = ratings_card.get_child(0)
+	var ratings_scroll := ScrollContainer.new()
+	ratings_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	ratings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	ratings_holder.add_child(ratings_scroll)
+	_ratings_box = VBoxContainer.new()
+	_ratings_box.add_theme_constant_override("separation", 3)
+	_ratings_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ratings_scroll.add_child(_ratings_box)
+	var my_players := _my_sim.participants(_my_home)
+	my_players.sort_custom(func(a, b): return Game.get_player(a).last_rating < Game.get_player(b).last_rating)
+	for pid in my_players:
+		var p := Game.get_player(pid)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var note_color := UITheme.ACCENT if p.last_rating <= 2.5 else (UITheme.TEXT if p.last_rating <= 4.0 else UITheme.DANGER)
+		row.add_child(UITheme.mini_pill(("%.1f" % p.last_rating).replace(".", ","), Color(0.1, 0.14, 0.12), note_color, 44))
+		var name := Label.new()
+		name.text = "%s  %s" % [p.pos, p.full_name()]
+		name.add_theme_font_size_override("font_size", 14)
+		name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(name)
+		var g: int = _my_sim.match_goals.get(p.id, 0)
+		if g > 0:
+			row.add_child(UITheme.mini_pill("⚽ %d" % g, Color(0.1, 0.14, 0.12), UITheme.ACCENT, 44))
+		_ratings_box.add_child(row)
+
+	# Spalte 3: weitere Ergebnisse
+	var others_card := _card_column("📡 Die weiteren Ergebnisse")
+	others_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns.add_child(others_card)
+	var others_holder: VBoxContainer = others_card.get_child(0)
+	_other_results = ItemList.new()
+	_other_results.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	others_holder.add_child(_other_results)
 	var current_league := ""
 	for sim in _md.others:
 		if sim.league_name != current_league:
@@ -501,26 +763,13 @@ func _finish() -> void:
 			_other_results.set_item_disabled(idx, true)
 		_other_results.add_item("%s  %d : %d  %s" % [sim.home.name, sim.hg, sim.ag, sim.away.name])
 
-func _fill_ratings() -> void:
-	for child in _ratings_box.get_children():
-		child.queue_free()
-	var my_players := _my_sim.participants(_my_home)
-	my_players.sort_custom(func(a, b): return Game.get_player(a).last_rating < Game.get_player(b).last_rating)
-	for pid in my_players:
-		var p := Game.get_player(pid)
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		var note_color := UITheme.ACCENT if p.last_rating <= 2.5 else (UITheme.TEXT if p.last_rating <= 4.0 else UITheme.DANGER)
-		var note := UITheme.mini_pill(("%.1f" % p.last_rating).replace(".", ","), Color(0.1, 0.14, 0.12), note_color, 44)
-		row.add_child(note)
-		var name := Label.new()
-		name.text = "%s  %s" % [p.pos, p.full_name()]
-		name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(name)
-		var g: int = _my_sim.match_goals.get(p.id, 0)
-		if g > 0:
-			row.add_child(UITheme.mini_pill("⚽ %d" % g, Color(0.1, 0.14, 0.12), UITheme.ACCENT, 44))
-		_ratings_box.add_child(row)
+	var done := Button.new()
+	done.text = "Weiter zur Zentrale  →"
+	done.add_theme_font_size_override("font_size", 18)
+	done.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	UITheme.make_primary(done)
+	done.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/hub.tscn"))
+	_post_panel.add_child(done)
 
 # ------------------------------------------------------------------ Mannschafts-Panels
 

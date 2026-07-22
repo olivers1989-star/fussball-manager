@@ -55,6 +55,9 @@ var stats := {
 }
 
 var match_goals := {}       # pid -> Tore in DIESEM Spiel (Live-Anzeige)
+var goal_log: Array = []    # [{min, pid, home, score}] – für den Spielbericht
+var ht_h := 0               # Halbzeitstand
+var ht_a := 0
 
 ## Ballbesitz-Schätzung der Heimmannschaft (aus den Mittelfeld-Anteilen).
 func possession_home() -> float:
@@ -110,6 +113,9 @@ func tick() -> void:
 		_emit("info", "Anpfiff im %s! %s empfängt %s." % [home.stadium, home.name, away.name])
 	if minute == 46:
 		_emit("info", "Die zweite Halbzeit läuft. Zwischenstand: %d:%d." % [hg, ag])
+	if minute == 45:
+		ht_h = hg
+		ht_a = ag
 
 	_ai_adjust()
 	_drain_condition()
@@ -415,6 +421,7 @@ func _goal(for_home: bool, club: ClubData, scorer: PlayerData, template: String)
 	else:
 		ag += 1
 		_emit("goal_away", template % [club.name, scorer.full_name(), "%d:%d" % [hg, ag]])
+	goal_log.append({"min": maxi(minute, 1), "pid": scorer.id, "home": for_home, "score": "%d:%d" % [hg, ag]})
 
 func _best_by(lineup: Array, key: String) -> PlayerData:
 	var best: PlayerData = players[lineup[0]]
