@@ -60,6 +60,8 @@ var win_bonus := 0             # Ausgehandelte Siegprämie pro gewonnenem Spiel
 var coach_exit_clause := false # Ausstiegsklausel: erlaubt den ablösefreien Wechsel trotz Vertrag
 var coach_money := 0           # Dein persönliches Trainerkonto (Gehalt + Prämien)
 var season_goal := {}          # Saisonziel des Vorstands: {text, position}
+var lineup_presets: Array = [] # gespeicherte Aufstellungen: {name, formation, lineup, spots, bench}
+var pick_weights := {"str": 1.0, "fresh": 0.4, "form": 0.4}  # Kriterien der Auto-Aufstellung
 var my_club_id := -1
 var transactions: Array = []   # {text, amount, matchday, season}
 var news: Array = []           # Tagesereignisse: {day, text, kind}, neueste zuerst
@@ -93,6 +95,8 @@ func new_game(p_club_id: int) -> void:
 	coach_exit_clause = bool(setup.get("exit_clause", false))
 	coach_money = 0
 	season_goal = setup.get("season_goal", _board_goal_for(my_club()))
+	lineup_presets = []
+	pick_weights = {"str": 1.0, "fresh": 0.4, "form": 0.4}
 	transactions.clear()
 	news.clear()
 	initialized = true
@@ -468,6 +472,79 @@ func resolve_talk(decision: Dictionary, reply_index: int) -> Dictionary:
 		text = "%s bleibt sichtlich unzufrieden – das Gespräch hat ihn nicht erreicht." % p.full_name()
 	var news := _add_news("training", "Gespräch mit %s: %s" % [p.full_name(), "positiv aufgenommen" if success else "verlief schwierig"])
 	return {"text": text, "success": success, "news": news, "delta": delta}
+
+# ------------------------------------------------------------------ Gespeicherte Aufstellungen
+
+## Sichert die aktuelle Aufstellung (Formation, Elf, Feldpositionen, Bank)
+## unter einem Namen. Ein vorhandener Eintrag gleichen Namens wird ersetzt.
+func save_lineup_preset(preset_name: String) -> String:
+	var c := my_club()
+	var clean := preset_name.strip_edges()
+	if clean == "":
+		clean = "%s %s" % [c.shape_label(), date_label()]
+	var entry := {
+		"name": clean,
+		"formation": c.formation,
+		"lineup": c.lineup.duplicate(),
+		"bench": c.bench.duplicate(),
+		"spots": c.lineup_spots.map(func(v): return [snappedf(v.x, 0.001), snappedf(v.y, 0.001)]),
+	}
+	for i in lineup_presets.size():
+		if str(lineup_presets[i].name) == clean:
+			lineup_presets[i] = entry
+			return clean
+	lineup_presets.append(entry)
+	return clean
+
+## Lädt eine gespeicherte Aufstellung. Fehlende oder nicht einsatzbereite
+## Spieler werden durch die beste verfügbare Alternative ersetzt.
+## Rückgabe: Anzahl der ersetzten Spieler.
+func load_lineup_preset(index: int) -> int:
+	if index < 0 or index >= lineup_presets.size():
+		return -1
+	var preset: Dictionary = lineup_presets[index]
+	var c := my_club()
+	c.formation = str(preset.get("formation", c.formation))
+	c.lineup_spots.clear()
+	for spot in preset.get("spots", []):
+		c.lineup_spots.append(Vector2(float(spot[0]), float(spot[1])))
+	# Elf übernehmen, soweit die Spieler noch da und fit sind
+	var wanted: Array = []
+	var replaced := 0
+	for pid in preset.get("lineup", []):
+		var id := int(pid)
+		if c.player_ids.has(id) and world.players[id].is_available():
+			wanted.append(id)
+		else:
+			wanted.append(-1)
+			replaced += 1
+	# Lücken mit den besten verfügbaren Spielern auffüllen
+	if wanted.has(-1):
+		var slots: Array = c.lineup_slots() if c.lineup_spots.size() == wanted.size() else ClubData.FORMATIONS[c.formation]
+		var free := c.players(world.players).filter(func(p):
+			return p.is_available() and not wanted.has(p.id))
+		for i in wanted.size():
+			if wanted[i] >= 0 or free.is_empty():
+				continue
+			var slot: String = slots[i] if i < slots.size() else "ZM"
+			free.sort_custom(func(a, b): return a.strength_at(slot) > b.strength_at(slot))
+			wanted[i] = free[0].id
+			free.remove_at(0)
+	c.lineup = wanted.filter(func(pid): return pid > 0)
+	if c.lineup_spots.size() != c.lineup.size():
+		c.lineup_spots = ClubData.FORMATION_SPOTS.get(c.formation, ClubData.FORMATION_SPOTS["4-4-2"]).duplicate()
+	# Bank übernehmen, Rest auffüllen
+	var bench: Array = []
+	for pid in preset.get("bench", []):
+		var id := int(pid)
+		if c.player_ids.has(id) and world.players[id].is_available() and not c.lineup.has(id):
+			bench.append(id)
+	c.bench = bench if not bench.is_empty() else c.best_bench(world.players, c.lineup, pick_weights)
+	return replaced
+
+func delete_lineup_preset(index: int) -> void:
+	if index >= 0 and index < lineup_presets.size():
+		lineup_presets.remove_at(index)
 
 ## Trägt ein Testspiel gegen den angefragten Gegner aus (echte Simulation).
 ## Rückgabe: {hg, ag, opponent, goals: [{min, name, home}], fee}
@@ -1015,6 +1092,8 @@ func save_game(custom_name: String = "") -> String:
 			"exit_clause": coach_exit_clause,
 			"coach_money": coach_money,
 			"season_goal": season_goal,
+			"lineup_presets": lineup_presets,
+			"pick_weights": pick_weights,
 			"my_club_id": my_club_id,
 			"club": my_club().name,
 			"season_year": world.season_year,
@@ -1093,6 +1172,13 @@ func load_game(path: String) -> bool:
 	coach_exit_clause = bool(data.meta.get("exit_clause", false))
 	coach_money = int(data.meta.get("coach_money", 0))
 	season_goal = data.meta.get("season_goal", {})
+	lineup_presets = data.meta.get("lineup_presets", [])
+	var saved_weights: Dictionary = data.meta.get("pick_weights", {})
+	pick_weights = {
+		"str": float(saved_weights.get("str", 1.0)),
+		"fresh": float(saved_weights.get("fresh", 0.4)),
+		"form": float(saved_weights.get("form", 0.4)),
+	}
 	my_club_id = int(data.meta.my_club_id)
 	if season_goal.is_empty():
 		season_goal = {"text": "Klassenerhalt", "position": 15}

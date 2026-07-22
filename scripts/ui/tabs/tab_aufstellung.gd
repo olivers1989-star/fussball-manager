@@ -22,38 +22,70 @@ var _selected_pid := -1
 var _crit_popup: PopupPanel
 var _crit_sliders := {}
 var _crit_values := {}
-var _pick_weights := {"str": 1.0, "fresh": 0.4, "form": 0.4}
+var _preset_popup: PopupPanel
+var _preset_list: VBoxContainer
+var _preset_name_edit: LineEdit
+
+## Die Kriterien liegen im Spielstand, damit sie erhalten bleiben.
+var _pick_weights: Dictionary:
+	get: return Game.pick_weights
 
 # ------------------------------------------------------------------ Spielfeld
 
-## Rasen mit Linien und Zonen-Andeutung; Drops überall erlaubt (freie Position).
+## Vollwertiges Spielfeld: Mähstreifen, Strafräume mit Elfmeterpunkt und Bogen,
+## Torraum, Tore, Eckbögen und Mittelkreis. Drops überall erlaubt (freie Position).
 class PitchControl extends Control:
 	var tab: TabAufstellung
 
 	func _draw() -> void:
-		var r := Rect2(Vector2.ZERO, size)
-		draw_rect(r, Color("#1a6b34"))
-		var stripes := 8
-		for i in stripes:
-			if i % 2 == 0:
-				draw_rect(Rect2(0, size.y * i / stripes, size.x, size.y / stripes), Color("#1d7439"))
-		var line := Color(1, 1, 1, 0.55)
+		var line := Color(1, 1, 1, 0.5)
 		var w := 2.0
-		var inset := 6.0
+		var inset := 10.0
 		var field := Rect2(Vector2(inset, inset), size - Vector2(inset * 2, inset * 2))
+
+		# Rasen mit Mähstreifen (quer, wie im Stadion)
+		draw_rect(Rect2(Vector2.ZERO, size), Color("#1c5f31"))
+		var stripes := 10
+		for i in stripes:
+			var band := Rect2(0, size.y * i / stripes, size.x, size.y / stripes + 1)
+			draw_rect(band, Color("#20693699") if i % 2 == 0 else Color("#1a5a2d99"))
+
+		# Außenlinien und Mittellinie
 		draw_rect(field, line, false, w)
-		draw_line(Vector2(inset, size.y * 0.5), Vector2(size.x - inset, size.y * 0.5), line, w)
-		draw_arc(Vector2(size.x * 0.5, size.y * 0.5), size.x * 0.12, 0, TAU, 48, line, w)
-		var box_w := size.x * 0.55
-		var box_h := size.y * 0.14
-		draw_rect(Rect2(Vector2((size.x - box_w) / 2.0, size.y - inset - box_h), Vector2(box_w, box_h)), line, false, w)
-		draw_rect(Rect2(Vector2((size.x - box_w) / 2.0, inset), Vector2(box_w, box_h)), line, false, w)
-		var small_w := size.x * 0.26
-		var small_h := size.y * 0.055
-		draw_rect(Rect2(Vector2((size.x - small_w) / 2.0, size.y - inset - small_h), Vector2(small_w, small_h)), line, false, w)
-		draw_rect(Rect2(Vector2((size.x - small_w) / 2.0, inset), Vector2(small_w, small_h)), line, false, w)
+		var cy := size.y * 0.5
+		draw_line(Vector2(inset, cy), Vector2(size.x - inset, cy), line, w)
+		var circle_r: float = minf(size.x, size.y) * 0.115
+		draw_arc(Vector2(size.x * 0.5, cy), circle_r, 0, TAU, 64, line, w)
+		draw_circle(Vector2(size.x * 0.5, cy), 3.0, line)
+
+		# Strafraum, Torraum, Elfmeterpunkt und Strafraumbogen – beide Seiten
+		var box_w := size.x * 0.58
+		var box_h := size.y * 0.155
+		var small_w := size.x * 0.27
+		var small_h := size.y * 0.062
+		var spot_dist := size.y * 0.105
+		var arc_r := size.y * 0.075
+		for bottom in [true, false]:
+			var base_y: float = size.y - inset if bottom else inset
+			var dir: float = -1.0 if bottom else 1.0
+			draw_rect(Rect2(Vector2((size.x - box_w) / 2.0, base_y + (dir * box_h if bottom else 0.0)), Vector2(box_w, box_h)), line, false, w)
+			draw_rect(Rect2(Vector2((size.x - small_w) / 2.0, base_y + (dir * small_h if bottom else 0.0)), Vector2(small_w, small_h)), line, false, w)
+			var spot := Vector2(size.x * 0.5, base_y + dir * spot_dist)
+			draw_circle(spot, 2.5, line)
+			# Strafraumbogen (nur der Teil außerhalb des Strafraums)
+			var start_angle: float = -0.62 if bottom else TAU / 2.0 - 0.62
+			draw_arc(spot, arc_r, start_angle, start_angle + 1.24, 32, line, w)
+			# Tor
+			var goal_w := size.x * 0.17
+			draw_rect(Rect2(Vector2((size.x - goal_w) / 2.0, base_y + (0.0 if bottom else -6.0)), Vector2(goal_w, 6.0)), Color(1, 1, 1, 0.75), false, 2.5)
+
+		# Eckbögen
+		for corner in [Vector2(inset, inset), Vector2(size.x - inset, inset),
+			Vector2(inset, size.y - inset), Vector2(size.x - inset, size.y - inset)]:
+			draw_arc(corner, 12.0, 0, TAU, 24, line, 1.5)
+
 		# Zonen-Reihen dezent andeuten (Abwehr / Mittelfeld / Angriff)
-		var zone := Color(1, 1, 1, 0.10)
+		var zone := Color(1, 1, 1, 0.07)
 		draw_line(Vector2(inset, size.y * (1.0 - 0.38)), Vector2(size.x - inset, size.y * (1.0 - 0.38)), zone, 1.0)
 		draw_line(Vector2(inset, size.y * (1.0 - 0.74)), Vector2(size.x - inset, size.y * (1.0 - 0.74)), zone, 1.0)
 
@@ -69,100 +101,99 @@ class SlotChip extends Button:
 	var zone_pos := ""
 	var pid := -1
 	var tab: TabAufstellung
-	var pos_label: Label       # Positions-Kürzel (farbige Pille oben links)
-	var pos_panel: PanelContainer
-	var str_label: Label       # große Stärkezahl oben rechts
+	# Aufbau: runder Trikot-Token mit Stärkezahl, darunter Namensplakette
+	var token: PanelContainer      # farbiger Kreis (Positionsgruppe)
+	var str_label: Label           # Stärkezahl im Token
+	var pos_label: Label           # Positions-Kürzel über dem Token
+	var name_plate: PanelContainer
 	var name_label: Label
-	var fresh_label: Label     # Frische in Prozent, farbig
-	var form_label: Label      # Formpfeil, farbig
 	var fresh_bar: ColorRect
-	var fresh_slot: Control
+	var fresh_rest: ColorRect
+	var form_label: Label
+
+	const TOKEN := 46
 
 	func _init(p_tab: TabAufstellung, index: int) -> void:
 		tab = p_tab
 		slot_index = index
-		custom_minimum_size = Vector2(136, 72)
+		custom_minimum_size = Vector2(108, 104)
 		focus_mode = Control.FOCUS_NONE
-		# Aufgewertete Spielerkarte: Positions-Pille + große Stärke, Name,
-		# Frische/Form als farbige Werte, unten ein Frische-Balken
-		var pad := MarginContainer.new()
-		pad.set_anchors_preset(Control.PRESET_FULL_RECT)
-		pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		for s in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-			pad.add_theme_constant_override(s, 7)
-		add_child(pad)
-		var v := VBoxContainer.new()
-		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		v.add_theme_constant_override("separation", 2)
-		pad.add_child(v)
+		flat = true   # kein Button-Rahmen – die Karte zeichnet sich selbst
 
-		var top := HBoxContainer.new()
-		top.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		top.add_theme_constant_override("separation", 6)
-		v.add_child(top)
-		pos_panel = PanelContainer.new()
-		pos_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pos_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		top.add_child(pos_panel)
+		var v := VBoxContainer.new()
+		v.set_anchors_preset(Control.PRESET_FULL_RECT)
+		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.alignment = BoxContainer.ALIGNMENT_CENTER
+		v.add_theme_constant_override("separation", 1)
+		add_child(v)
+
+		# Positions-Kürzel
 		pos_label = Label.new()
 		pos_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pos_label.add_theme_font_size_override("font_size", 12)
-		pos_label.add_theme_color_override("font_color", Color.WHITE)
 		pos_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		pos_label.custom_minimum_size = Vector2(40, 0)
-		pos_panel.add_child(pos_label)
-		var gap := Control.new()
-		gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		top.add_child(gap)
+		pos_label.add_theme_font_size_override("font_size", 12)
+		v.add_child(pos_label)
+
+		# Runder Token mit der Stärke
+		var token_row := HBoxContainer.new()
+		token_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		token_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		v.add_child(token_row)
+		token = PanelContainer.new()
+		token.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		token.custom_minimum_size = Vector2(TOKEN, TOKEN)
+		token_row.add_child(token)
 		str_label = Label.new()
 		str_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		str_label.add_theme_font_size_override("font_size", 21)
+		str_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		str_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		top.add_child(str_label)
+		str_label.add_theme_font_size_override("font_size", 20)
+		token.add_child(str_label)
 
+		# Namensplakette
+		name_plate = PanelContainer.new()
+		name_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(name_plate)
 		name_label = Label.new()
 		name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		name_label.clip_text = true
-		name_label.add_theme_font_size_override("font_size", 16)
-		v.add_child(name_label)
+		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_label.add_theme_font_size_override("font_size", 14)
+		name_plate.add_child(name_label)
 
-		var bottom := HBoxContainer.new()
-		bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bottom.add_theme_constant_override("separation", 10)
-		v.add_child(bottom)
-		fresh_label = Label.new()
-		fresh_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		fresh_label.add_theme_font_size_override("font_size", 12)
-		bottom.add_child(fresh_label)
-		form_label = Label.new()
-		form_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		form_label.add_theme_font_size_override("font_size", 12)
-		bottom.add_child(form_label)
-
-		# Frische-Balken: gefüllter Teil links, Rest als Restfläche (Stretch-Ratios)
+		# Frische-Balken mit Formpfeil daneben
 		var bar_row := HBoxContainer.new()
 		bar_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bar_row.add_theme_constant_override("separation", 0)
-		bar_row.custom_minimum_size = Vector2(0, 4)
+		bar_row.add_theme_constant_override("separation", 4)
 		v.add_child(bar_row)
+		var bar_wrap := HBoxContainer.new()
+		bar_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bar_wrap.add_theme_constant_override("separation", 0)
+		bar_wrap.custom_minimum_size = Vector2(0, 5)
+		bar_wrap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar_wrap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		bar_row.add_child(bar_wrap)
 		fresh_bar = ColorRect.new()
 		fresh_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		fresh_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		bar_row.add_child(fresh_bar)
-		fresh_slot = ColorRect.new()   # Restfläche (dunkel hinterlegt)
-		fresh_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		fresh_slot.color = Color(1, 1, 1, 0.08)
-		fresh_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		bar_row.add_child(fresh_slot)
+		bar_wrap.add_child(fresh_bar)
+		fresh_rest = ColorRect.new()
+		fresh_rest.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fresh_rest.color = Color(0, 0, 0, 0.35)
+		fresh_rest.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar_wrap.add_child(fresh_rest)
+		form_label = Label.new()
+		form_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		form_label.add_theme_font_size_override("font_size", 11)
+		bar_row.add_child(form_label)
 
 	## Balken über Stretch-Ratios: gefüllter Anteil zu Restanteil.
 	func set_fresh(cond: float, color: Color) -> void:
 		fresh_bar.color = color
 		var filled := clampf(cond, 1.0, 100.0)
 		fresh_bar.size_flags_stretch_ratio = filled
-		fresh_slot.size_flags_stretch_ratio = maxf(100.0 - filled, 0.01)
-		fresh_slot.color = Color(1, 1, 1, 0.0) if color.a == 0.0 else Color(1, 1, 1, 0.08)
+		fresh_rest.size_flags_stretch_ratio = maxf(100.0 - filled, 0.01)
+		fresh_rest.color = Color(0, 0, 0, 0.0) if color.a == 0.0 else Color(0, 0, 0, 0.35)
 
 	func _get_drag_data(_at: Vector2) -> Variant:
 		if pid <= 0:
@@ -230,10 +261,18 @@ class RosterRow extends PanelContainer:
 		return {"kind": "roster", "pid": pid}
 
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
-		return data is Dictionary and data.get("kind", "") in ["slot", "bench", "roster"]
+		var ok: bool = data is Dictionary and data.get("kind", "") in ["slot", "bench", "roster"] \
+			and int(data.get("pid", -1)) != pid
+		modulate = Color(1.25, 1.25, 1.25) if ok else Color.WHITE   # Zeile hebt sich hervor
+		return ok
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_DRAG_END or what == NOTIFICATION_MOUSE_EXIT:
+			modulate = Color.WHITE
 
 	## Drop einer Zeile auf eine andere Zeile: Spieler tauschen bzw. einwechseln.
 	func _drop_data(_at: Vector2, data: Variant) -> void:
+		modulate = Color.WHITE
 		tab.drop_on_roster_player(pid, data)
 
 	func _gui_input(event: InputEvent) -> void:
@@ -275,9 +314,14 @@ func _init() -> void:
 	crit_button.text = "⚙ Kriterien"
 	crit_button.pressed.connect(_open_criteria)
 	top.add_child(crit_button)
+	var preset_button := Button.new()
+	preset_button.text = "📋 Aufstellungen"
+	preset_button.pressed.connect(_open_presets)
+	top.add_child(preset_button)
 	_summary = info_label()
 	top.add_child(_summary)
 	_build_criteria_popup()
+	_build_preset_popup()
 
 	var main := HBoxContainer.new()
 	main.add_theme_constant_override("separation", 12)
@@ -390,6 +434,10 @@ func refresh() -> void:
 		if _formation_select.get_item_text(i) == c.formation:
 			_formation_select.select(i)
 			break
+	# Kriterien-Regler an den (ggf. geladenen) Spielstand angleichen
+	for key in _crit_sliders:
+		_crit_sliders[key].set_value_no_signal(float(_pick_weights.get(key, 0.4)) * 100.0)
+	_update_crit_labels()
 	c.lineup = c.match_lineup(Game.world.players).duplicate()
 	if c.lineup_spots.size() != c.lineup.size():
 		c.lineup_spots = ClubData.FORMATION_SPOTS.get(c.formation, ClubData.FORMATION_SPOTS["4-4-2"]).duplicate()
@@ -432,20 +480,16 @@ func _refresh_chips() -> void:
 			chip.pos_label.text = chip.zone_pos + mark
 			chip.name_label.text = p.last_name
 			chip.str_label.text = str(st)
-			chip.str_label.add_theme_color_override("font_color", _strength_color(st))
-			chip.fresh_label.text = "%d%%" % int(p.condition)
-			chip.fresh_label.add_theme_color_override("font_color", _fresh_color(p.condition))
 			chip.form_label.text = Fmt.form_icon(p.form)
 			chip.form_label.add_theme_color_override("font_color", Fmt.form_color(p.form))
 			chip.set_fresh(p.condition, _fresh_color(p.condition))
-			chip.tooltip_text = "%s (%s, %s)\nSpielt %s (%s, %d %% Vertrautheit): Stärke %d – eigene Position %s: %d%s" % [
+			chip.tooltip_text = "%s (%s, %s)\nSpielt %s (%s, %d %% Vertrautheit): Stärke %d – eigene Position %s: %d\nFrische %d %%%s" % [
 				p.full_name(), p.pos, p.nat, chip.zone_pos, fam_note, int(fam * 100.0), st, p.pos, p.strength,
-				("\n" + ", ".join(p.traits)) if not p.traits.is_empty() else ""]
+				int(p.condition), ("\n" + ", ".join(p.traits)) if not p.traits.is_empty() else ""]
 		else:
 			chip.pos_label.text = chip.zone_pos
-			chip.name_label.text = "– frei –"
-			chip.str_label.text = ""
-			chip.fresh_label.text = ""
+			chip.name_label.text = "frei"
+			chip.str_label.text = "–"
 			chip.form_label.text = ""
 			chip.set_fresh(0.0, Color(0, 0, 0, 0))
 			chip.tooltip_text = ""
@@ -455,32 +499,49 @@ func _refresh_chips() -> void:
 	_summary.text = "Mannschaftsstärke %d  ·  Ausrichtung %s  ·  Ø auf Position %.1f%s" % [total, c.shape_label(), avg, warn_text]
 	_layout_pitch()
 
+## Karte im Taktikboard-Stil: runder Trikot-Token in der Farbe der
+## Positionsgruppe, darunter Namensplakette. Fehlbesetzung färbt orange.
 func _style_chip(chip: SlotChip) -> void:
 	var group: String = PlayerData.GROUP_OF[chip.zone_pos]
 	var base: Color = GROUP_COLORS[group]
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.06, 0.09, 0.08, 0.92)
-	style.set_corner_radius_all(8)
-	style.set_border_width_all(2)
-	style.border_color = base
-	if chip.pid > 0 and Game.get_player(chip.pid).position_familiarity(chip.zone_pos) < 0.72:
-		style.border_color = Color("#f59e0b")
-		style.bg_color = Color(0.2, 0.12, 0.02, 0.94)
-	if chip.pid > 0 and chip.pid == _selected_pid:
-		style.set_border_width_all(3)
-		style.border_color = Color.WHITE
-	chip.add_theme_stylebox_override("normal", style)
-	var hover := style.duplicate()
-	hover.bg_color = style.bg_color.lightened(0.08)
-	chip.add_theme_stylebox_override("hover", hover)
-	chip.add_theme_stylebox_override("pressed", style)
-	# Positions-Pille in der Farbe der Positionsgruppe
-	var pill := UITheme.box(base.darkened(0.25), 999)
-	pill.content_margin_left = 6
-	pill.content_margin_right = 6
-	pill.content_margin_top = 1
-	pill.content_margin_bottom = 1
-	chip.pos_panel.add_theme_stylebox_override("panel", pill)
+	var empty := chip.pid <= 0
+	var mis := false
+	if not empty:
+		mis = Game.get_player(chip.pid).position_familiarity(chip.zone_pos) < 0.72
+	var token_color: Color = base if not mis else Color("#f59e0b")
+	if empty:
+		token_color = Color(0.35, 0.4, 0.38, 0.55)
+	var selected := not empty and chip.pid == _selected_pid
+
+	# Runder Token (voller Eckenradius = Kreis)
+	var token_sb := StyleBoxFlat.new()
+	token_sb.bg_color = token_color.darkened(0.12)
+	token_sb.set_corner_radius_all(SlotChip.TOKEN / 2)
+	token_sb.set_border_width_all(3 if selected else 2)
+	token_sb.border_color = Color.WHITE if selected else token_color.lightened(0.35)
+	token_sb.shadow_color = Color(0, 0, 0, 0.45)
+	token_sb.shadow_size = 4
+	token_sb.content_margin_top = 2
+	chip.token.add_theme_stylebox_override("panel", token_sb)
+	chip.str_label.add_theme_color_override("font_color", Color.WHITE if not empty else Color(1, 1, 1, 0.5))
+
+	# Namensplakette
+	var plate := UITheme.box(Color(0.05, 0.08, 0.07, 0.88), 5)
+	plate.content_margin_left = 6
+	plate.content_margin_right = 6
+	plate.content_margin_top = 1
+	plate.content_margin_bottom = 1
+	if selected:
+		plate.set_border_width_all(1)
+		plate.border_color = Color.WHITE
+	chip.name_plate.add_theme_stylebox_override("panel", plate)
+	chip.name_label.add_theme_color_override("font_color", Color.WHITE if not empty else Color(1, 1, 1, 0.5))
+	chip.pos_label.add_theme_color_override("font_color", token_color.lightened(0.45))
+
+	# Der Button selbst bleibt unsichtbar (nur Klickfläche)
+	var invisible := StyleBoxEmpty.new()
+	for state in ["normal", "hover", "pressed", "focus"]:
+		chip.add_theme_stylebox_override(state, invisible)
 
 ## Stärke-Farbe: Weltklasse grün, Durchschnitt neutral, schwach rötlich.
 func _strength_color(st: int) -> Color:
@@ -542,8 +603,8 @@ func _layout_pitch() -> void:
 	# jeweils entlang der Achse mit der geringeren Überlappung, damit die
 	# Formation ihre Form behält
 	var chip_size: Vector2 = _chips[0].custom_minimum_size
-	var min_x := chip_size.x + 4.0
-	var min_y := chip_size.y + 4.0
+	var min_x := chip_size.x - 4.0   # Karten dürfen sich leicht überschneiden
+	var min_y := chip_size.y - 12.0  # (nur Rand, der Token bleibt frei)
 	for pass_no in 8:
 		var moved := false
 		for i in 11:
@@ -630,6 +691,7 @@ func _build_roster_row(pid: int, kind: String, zone: String) -> RosterRow:
 		style.border_color = Color.WHITE
 	row.add_theme_stylebox_override("panel", style)
 	row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	row.tooltip_text = "Ziehen: auf einen anderen Spieler (Liste oder Feld) zum Tauschen"
 
 	var line := HBoxContainer.new()
 	line.add_theme_constant_override("separation", 6)
@@ -695,7 +757,17 @@ func _build_roster_row(pid: int, kind: String, zone: String) -> RosterRow:
 	form.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	form.add_theme_color_override("font_color", Fmt.form_color(p.form))
 	line.add_child(form)
+	# Alle Zellen durchlässig machen, damit Klick und Drag der ganzen Zeile gelten
+	_pass_mouse_to_row(line)
 	return row
+
+## Setzt Maus-Events aller Kinder auf "ignorieren", damit die Zeile selbst
+## Klicks und Drag & Drop erhält (Container schlucken sie sonst).
+func _pass_mouse_to_row(node: Node) -> void:
+	for child in node.get_children():
+		if child is Control:
+			child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_pass_mouse_to_row(child)
 
 func _num_cell(text: String, width: int, color: Color) -> Label:
 	var l := Label.new()
@@ -1048,3 +1120,92 @@ func _on_crit_changed(value: float, key: String) -> void:
 func _update_crit_labels() -> void:
 	for key in _crit_values:
 		_crit_values[key].text = "%d%%" % int(_pick_weights[key] * 100.0)
+
+# ------------------------------------------------------------------ Gespeicherte Aufstellungen
+
+func _build_preset_popup() -> void:
+	_preset_popup = PopupPanel.new()
+	add_child(_preset_popup)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	box.custom_minimum_size = Vector2(430, 0)
+	_preset_popup.add_child(box)
+	var title := Label.new()
+	title.text = "Gespeicherte Aufstellungen"
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", UITheme.ACCENT)
+	box.add_child(title)
+	var hint := Label.new()
+	hint.text = "Formation, Positionen auf dem Feld und Ersatzbank werden mitgespeichert."
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	box.add_child(hint)
+	var save_row := HBoxContainer.new()
+	save_row.add_theme_constant_override("separation", 6)
+	box.add_child(save_row)
+	_preset_name_edit = LineEdit.new()
+	_preset_name_edit.placeholder_text = "Name (leer = automatisch)"
+	_preset_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save_row.add_child(_preset_name_edit)
+	var save_button := Button.new()
+	save_button.text = "💾 Sichern"
+	UITheme.make_primary(save_button)
+	save_button.pressed.connect(_on_preset_save)
+	save_row.add_child(save_button)
+	_preset_list = VBoxContainer.new()
+	_preset_list.add_theme_constant_override("separation", 4)
+	box.add_child(_preset_list)
+
+func _open_presets() -> void:
+	_refresh_preset_list()
+	_preset_popup.popup_centered()
+
+func _refresh_preset_list() -> void:
+	for child in _preset_list.get_children():
+		child.queue_free()
+	if Game.lineup_presets.is_empty():
+		var empty := Label.new()
+		empty.text = "Noch keine Aufstellung gespeichert."
+		empty.add_theme_font_size_override("font_size", 12)
+		empty.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		_preset_list.add_child(empty)
+		return
+	for i in Game.lineup_presets.size():
+		var preset: Dictionary = Game.lineup_presets[i]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		_preset_list.add_child(row)
+		var name_label := Label.new()
+		name_label.text = "%s  (%s)" % [str(preset.name), str(preset.get("formation", ""))]
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_label.clip_text = true
+		row.add_child(name_label)
+		var load_button := Button.new()
+		load_button.text = "Laden"
+		load_button.pressed.connect(_on_preset_load.bind(i))
+		row.add_child(load_button)
+		var del := Button.new()
+		del.text = "🗑"
+		del.pressed.connect(_on_preset_delete.bind(i))
+		row.add_child(del)
+
+func _on_preset_save() -> void:
+	var saved := Game.save_lineup_preset(_preset_name_edit.text)
+	_preset_name_edit.text = ""
+	_message.text = "Aufstellung „%s“ gespeichert." % saved
+	_refresh_preset_list()
+
+func _on_preset_load(index: int) -> void:
+	var replaced := Game.load_lineup_preset(index)
+	_preset_popup.hide()
+	if replaced < 0:
+		_message.text = "Aufstellung konnte nicht geladen werden."
+		return
+	var preset: Dictionary = Game.lineup_presets[index]
+	_message.text = "Aufstellung „%s“ geladen." % str(preset.name) if replaced == 0 \
+		else "Aufstellung „%s“ geladen – %d Spieler ersetzt (fehlen oder nicht fit)." % [str(preset.name), replaced]
+	refresh()
+
+func _on_preset_delete(index: int) -> void:
+	Game.delete_lineup_preset(index)
+	_refresh_preset_list()
