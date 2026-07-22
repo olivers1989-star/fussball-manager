@@ -79,6 +79,21 @@ func _ready() -> void:
 	assert(twisted.gf < normal.gf, "Verdrehte Elf muss weniger Tore erzielen")
 	print("Engine-Beleg OK: Fehlbesetzung kostet messbar Tordifferenz")
 
+	# (4) KI-Vielfalt: Formationen passen zum verfügbaren Kader und sind
+	# nicht alle gleich; auch die Grundausrichtungen unterscheiden sich
+	var md := Game.start_matchday()
+	var forms := {}
+	for cid in Game.world.clubs:
+		if cid != Game.my_club_id:
+			forms[Game.world.clubs[cid].formation] = true
+	var mentalities := {}
+	for sim in md.others:
+		mentalities[sim.mentality_h] = true
+		mentalities[sim.mentality_a] = true
+	print("KI-Formationen: %s · Ausrichtungen: %s" % [", ".join(forms.keys()), ", ".join(mentalities.keys())])
+	assert(forms.size() >= 3, "KI muss verschiedene Formationen spielen (nur %d)" % forms.size())
+	assert(mentalities.size() >= 2, "KI muss verschiedene Ausrichtungen spielen")
+
 	print("=== AUFSTELLUNGS-TEST OK ===")
 	get_tree().quit(0)
 

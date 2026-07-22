@@ -54,9 +54,20 @@ var stats := {
 	"poss_h": 0.0, "poss_n": 0,
 }
 
+var match_goals := {}       # pid -> Tore in DIESEM Spiel (Live-Anzeige)
+
 ## Ballbesitz-Schätzung der Heimmannschaft (aus den Mittelfeld-Anteilen).
 func possession_home() -> float:
 	return (stats.poss_h / stats.poss_n) if stats.poss_n > 0 else 0.5
+
+## Live-Note eines Spielers während des Spiels (gleiche Basis wie die Endnote).
+func live_rating(pid: int) -> float:
+	var result_adj := 0.0
+	var is_home_player: bool = _is_home_side.get(pid, true)
+	if hg != ag:
+		result_adj = -0.4 if ((hg > ag) == is_home_player) else 0.4
+	var day_adj: float = (1.0 - dayform.get(pid, 1.0)) * 8.0
+	return clampf(3.5 + _note_adj.get(pid, 0.0) + result_adj + day_adj, 1.0, 6.0)
 
 var bench_h: Array = []     # Ersatzbank (max. ClubData.BENCH_SIZE): nur von hier darf gewechselt werden
 var bench_a: Array = []
@@ -110,6 +121,13 @@ func tick() -> void:
 	var mid_sum: float = rat_h.mid + rat_a.mid
 	stats.poss_h += rat_h.mid / mid_sum
 	stats.poss_n += 1
+	# Laufende Standards ohne Großchance (realistische Eckball-/Freistoßzahlen):
+	# das dominierende Team erarbeitet sich mehr davon
+	var home_share: float = rat_h.mid / mid_sum
+	if _rng.randf() < 0.115:
+		stats["corners_h" if _rng.randf() < home_share else "corners_a"] += 1
+	if _rng.randf() < 0.24:
+		stats["freekicks_h" if _rng.randf() < home_share else "freekicks_a"] += 1
 	var p_home: float = CHANCE_BASE * (2.0 * rat_h.mid / mid_sum) * HOME_BONUS
 	var p_away: float = CHANCE_BASE * (2.0 * rat_a.mid / mid_sum) * (2.0 - HOME_BONUS)
 
@@ -389,6 +407,7 @@ func _flow_commentary(rat_h: Dictionary, rat_a: Dictionary) -> void:
 
 func _goal(for_home: bool, club: ClubData, scorer: PlayerData, template: String) -> void:
 	scorer.goals_season += 1
+	match_goals[scorer.id] = match_goals.get(scorer.id, 0) + 1
 	_note_adj[scorer.id] = _note_adj.get(scorer.id, 0.0) - 0.7
 	if for_home:
 		hg += 1

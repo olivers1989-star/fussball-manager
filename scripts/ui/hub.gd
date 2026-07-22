@@ -601,6 +601,8 @@ func _show_prep_dialog() -> void:
 			_prep_select.select(i)
 			break
 	_prep_desc.text = Game.MATCH_PLANS[Game.match_plan].desc
+	# Über dem Wochendurchlauf-Overlay anzeigen (sonst bleibt es unsichtbar dahinter)
+	_prep_overlay.move_to_front()
 	_prep_overlay.visible = true
 
 func _on_prep_confirmed() -> void:

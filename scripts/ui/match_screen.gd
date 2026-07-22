@@ -34,8 +34,8 @@ var _other_results: ItemList
 var _ratings_box: VBoxContainer
 var _conference: ItemList
 var _mentality_buttons := {}
-var _field_list: ItemList
-var _bench_list: ItemList
+var _team_panel_h: PanelContainer
+var _team_panel_a: PanelContainer
 var _subs_label: Label
 var _tactic_message: Label
 var _timer: Timer
@@ -91,28 +91,41 @@ func _build_ui() -> void:
 	_live_box.visible = false
 	box.add_child(_live_box)
 
+	# Linke Spalte: beide Mannschaften nebeneinander, darunter der Ticker
+	var left_col := VBoxContainer.new()
+	left_col.add_theme_constant_override("separation", 10)
+	left_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_col.size_flags_stretch_ratio = 1.55
+	_live_box.add_child(left_col)
+
+	var teams_row := HBoxContainer.new()
+	teams_row.add_theme_constant_override("separation", 10)
+	left_col.add_child(teams_row)
+	_team_panel_h = _build_team_panel(_my_sim.home, true)
+	teams_row.add_child(_team_panel_h)
+	_team_panel_a = _build_team_panel(_my_sim.away, false)
+	teams_row.add_child(_team_panel_a)
+
 	var ticker_card := _card_column("📻 Liveticker")
 	var ticker_panel: VBoxContainer = ticker_card.get_child(0)
 	_ticker = RichTextLabel.new()
 	_ticker.bbcode_enabled = true
 	_ticker.scroll_following = true
 	_ticker.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_ticker.add_theme_font_size_override("normal_font_size", 16)
-	_ticker.add_theme_constant_override("line_separation", 7)
+	_ticker.add_theme_font_size_override("normal_font_size", 15)
+	_ticker.add_theme_constant_override("line_separation", 6)
 	ticker_panel.add_child(_ticker)
-	ticker_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ticker_card.size_flags_stretch_ratio = 1.5
-	_live_box.add_child(ticker_card)
+	ticker_card.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	left_col.add_child(ticker_card)
 
+	# Rechte Spalte: Taktik, Statistik & Konferenz
 	var side_panel := VBoxContainer.new()
-	side_panel.custom_minimum_size = Vector2(470, 0)
+	side_panel.custom_minimum_size = Vector2(430, 0)
 	side_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	side_panel.add_theme_constant_override("separation", 12)
 	_live_box.add_child(side_panel)
 
-	# Taktik-Karte
-	var tactic_card := _card_column("🎯 Taktik · %s" % Game.my_club().short_name)
-	tactic_card.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var tactic_card := _card_column("🎯 Deine Taktik · %s" % Game.my_club().short_name)
 	side_panel.add_child(tactic_card)
 	var tactic_box: VBoxContainer = tactic_card.get_child(0)
 
@@ -129,47 +142,23 @@ func _build_ui() -> void:
 		mentality_row.add_child(b)
 		_mentality_buttons[m] = b
 	_style_mentality_buttons("ausgewogen")
-	_subs_label = Label.new()
-	_subs_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
-	mentality_row.add_child(_subs_label)
 
+	var lineup_row := HBoxContainer.new()
+	lineup_row.add_theme_constant_override("separation", 8)
+	tactic_box.add_child(lineup_row)
 	var lineup_button := Button.new()
 	lineup_button.text = "🧩 Aufstellung & Wechsel"
 	UITheme.make_primary(lineup_button)
 	lineup_button.pressed.connect(_open_overlay)
-	tactic_box.add_child(lineup_button)
-
-	var field_head := Label.new()
-	field_head.text = "Auf dem Feld"
-	field_head.add_theme_font_size_override("font_size", 13)
-	field_head.add_theme_color_override("font_color", UITheme.TEXT_DIM)
-	tactic_box.add_child(field_head)
-	_field_list = ItemList.new()
-	_field_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_field_list.custom_minimum_size = Vector2(0, 128)
-	tactic_box.add_child(_field_list)
-	var bench_head := Label.new()
-	bench_head.text = "Ersatzbank (nur von hier darf gewechselt werden)"
-	bench_head.add_theme_font_size_override("font_size", 13)
-	bench_head.add_theme_color_override("font_color", UITheme.TEXT_DIM)
-	tactic_box.add_child(bench_head)
-	_bench_list = ItemList.new()
-	_bench_list.custom_minimum_size = Vector2(0, 92)
-	tactic_box.add_child(_bench_list)
-
-	var sub_row := HBoxContainer.new()
-	sub_row.add_theme_constant_override("separation", 8)
-	tactic_box.add_child(sub_row)
-	var sub_button := Button.new()
-	sub_button.text = "↔ Auswechseln"
-	UITheme.make_primary(sub_button)
-	sub_button.pressed.connect(_on_substitute)
-	sub_row.add_child(sub_button)
+	lineup_row.add_child(lineup_button)
+	_subs_label = Label.new()
+	_subs_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	lineup_row.add_child(_subs_label)
 	_tactic_message = Label.new()
+	_tactic_message.add_theme_font_size_override("font_size", 12)
 	_tactic_message.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	_tactic_message.clip_text = true
-	_tactic_message.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sub_row.add_child(_tactic_message)
+	tactic_box.add_child(_tactic_message)
 
 	# Statistik & Konferenz nebeneinander in einer Karte
 	var info_card := _card_column("📊 Statistik & Konferenz")
@@ -433,7 +422,7 @@ func _on_kickoff() -> void:
 	if c.lineup == lineup and c.lineup_spots.size() == lineup.size():
 		for i in lineup.size():
 			_live_spots[lineup[i]] = c.lineup_spots[i]
-	_refresh_tactic_panel()
+	_refresh_team_panels()
 	_update_stats()
 	_running = true
 	_timer.start()
@@ -452,11 +441,11 @@ func _on_tick() -> void:
 	_update_conference()
 	# Frische, Bänke und Statistik live aktualisieren (Auswahl bleibt erhalten)
 	if _my_sim.minute % 3 == 0:
-		_refresh_tactic_panel()
+		_refresh_team_panels()
 		_update_stats()
 	if _my_sim.minute == 45:
 		_set_paused(true)
-		_refresh_tactic_panel()
+		_refresh_team_panels()
 		_minute_label.text = "⏸ Halbzeit – Zeit für Anpassungen"
 	if _my_sim.finished:
 		_finish()
@@ -528,17 +517,103 @@ func _fill_ratings() -> void:
 		name.text = "%s  %s" % [p.pos, p.full_name()]
 		name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(name)
-		if p.goals_season > 0 and _goals_in_match(p.id) > 0:
-			row.add_child(UITheme.mini_pill("⚽ %d" % _goals_in_match(p.id), Color(0.1, 0.14, 0.12), UITheme.ACCENT, 44))
+		var g: int = _my_sim.match_goals.get(p.id, 0)
+		if g > 0:
+			row.add_child(UITheme.mini_pill("⚽ %d" % g, Color(0.1, 0.14, 0.12), UITheme.ACCENT, 44))
 		_ratings_box.add_child(row)
 
-func _goals_in_match(pid: int) -> int:
-	var count := 0
-	var p := Game.get_player(pid)
-	for ev in _my_sim.events:
-		if ev.kind in ["goal_home", "goal_away"] and p.full_name() in str(ev.text):
-			count += 1
-	return count
+# ------------------------------------------------------------------ Mannschafts-Panels
+
+## Panel einer Mannschaft: Kopf mit Taktik, darunter Name · Note · Tore (live).
+func _build_team_panel(club: ClubData, is_home: bool) -> PanelContainer:
+	var card := PanelContainer.new()
+	var sb := UITheme.box(UITheme.SURFACE, 12, UITheme.BORDER)
+	sb.set_content_margin_all(10)
+	card.add_theme_stylebox_override("panel", sb)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 4)
+	card.add_child(v)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	v.add_child(head)
+	head.add_child(UITheme.club_badge(club.short_name, Color(club.color), 26))
+	var name := Label.new()
+	name.text = club.short_name
+	name.add_theme_font_size_override("font_size", 15)
+	if club.id == Game.my_club_id:
+		name.add_theme_color_override("font_color", UITheme.ACCENT)
+	head.add_child(name)
+	var tactic := Label.new()
+	tactic.add_theme_font_size_override("font_size", 12)
+	tactic.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	tactic.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tactic.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	head.add_child(tactic)
+	card.set_meta("tactic", tactic)
+	var header_row := HBoxContainer.new()
+	v.add_child(header_row)
+	for entry in [["Name", 0, true], ["Note", 44, false], ["Tore", 36, false]]:
+		var h := Label.new()
+		h.text = entry[0]
+		h.add_theme_font_size_override("font_size", 11)
+		h.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		if entry[2]:
+			h.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		else:
+			h.custom_minimum_size = Vector2(entry[1], 0)
+			h.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		header_row.add_child(h)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 1)
+	v.add_child(rows)
+	card.set_meta("rows", rows)
+	card.set_meta("is_home", is_home)
+	return card
+
+func _refresh_team_panels() -> void:
+	_subs_label.text = "Wechsel %d/%d" % [_my_sim.subs_used(_my_home), MatchSim.MAX_SUBS]
+	for panel in [_team_panel_h, _team_panel_a]:
+		var is_home: bool = panel.get_meta("is_home")
+		var tactic: Label = panel.get_meta("tactic")
+		tactic.text = "Taktik: %s" % (_my_sim.mentality_h if is_home else _my_sim.mentality_a)
+		var rows: VBoxContainer = panel.get_meta("rows")
+		for child in rows.get_children():
+			child.queue_free()
+		var lineup: Array = _my_sim.lineup_h if is_home else _my_sim.lineup_a
+		for pid in lineup:
+			var p := Game.get_player(pid)
+			var row := HBoxContainer.new()
+			var slot := _my_sim._slot_of(pid, is_home)
+			var name := Label.new()
+			var sub_mark := " ⇄" if _my_sim._subbed_in.has(pid) else ""
+			name.text = "%s  %s%s" % [slot, p.last_name, sub_mark]
+			name.add_theme_font_size_override("font_size", 13)
+			name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			name.clip_text = true
+			if int(_my_sim.cond[pid]) < 40:
+				name.add_theme_color_override("font_color", UITheme.DANGER)
+			elif int(_my_sim.cond[pid]) < 60:
+				name.add_theme_color_override("font_color", UITheme.WARN)
+			row.add_child(name)
+			var note := Label.new()
+			var rating := _my_sim.live_rating(pid)
+			note.text = ("%.1f" % rating).replace(".", ",")
+			note.custom_minimum_size = Vector2(44, 0)
+			note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			note.add_theme_font_size_override("font_size", 13)
+			note.add_theme_color_override("font_color", UITheme.ACCENT if rating <= 2.5 else (UITheme.TEXT if rating <= 4.0 else UITheme.DANGER))
+			row.add_child(note)
+			var goals := Label.new()
+			var g: int = _my_sim.match_goals.get(pid, 0)
+			goals.text = str(g) if g > 0 else "–"
+			goals.custom_minimum_size = Vector2(36, 0)
+			goals.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			goals.add_theme_font_size_override("font_size", 13)
+			if g > 0:
+				goals.add_theme_color_override("font_color", UITheme.ACCENT)
+			row.add_child(goals)
+			rows.add_child(row)
 
 # ------------------------------------------------------------------ Eingriffe
 
@@ -551,74 +626,6 @@ func _on_mentality_pressed(m: String) -> void:
 func _style_mentality_buttons(active: String) -> void:
 	for key in _mentality_buttons:
 		_mentality_buttons[key].button_pressed = key == active
-
-func _on_substitute() -> void:
-	var sel_field := _field_list.get_selected_items()
-	var sel_bench := _bench_list.get_selected_items()
-	if sel_field.is_empty() or sel_bench.is_empty():
-		_tactic_message.text = "Je einen Spieler auf Feld und Bank wählen."
-		return
-	var pid_out: int = _field_list.get_item_metadata(sel_field[0])
-	var pid_in: int = _bench_list.get_item_metadata(sel_bench[0])
-	var error := _my_sim.substitute(_my_home, pid_out, pid_in)
-	if error.is_empty():
-		_tactic_message.text = "Wechsel vollzogen."
-		_flush_events()
-		_refresh_tactic_panel()
-	else:
-		_tactic_message.text = error
-
-func _refresh_tactic_panel() -> void:
-	_subs_label.text = "  Wechsel %d/%d" % [_my_sim.subs_used(_my_home), MatchSim.MAX_SUBS]
-	var sel_field := _selected_pid(_field_list)
-	var sel_bench := _selected_pid(_bench_list)
-	var lineup: Array = _my_sim.lineup_h if _my_home else _my_sim.lineup_a
-	_fill_field_list(lineup)
-	_fill_bench_list(_my_sim.bench(_my_home))
-	_restore_selection(_field_list, sel_field)
-	_restore_selection(_bench_list, sel_bench)
-
-func _selected_pid(list: ItemList) -> int:
-	var selected := list.get_selected_items()
-	if selected.is_empty():
-		return -1
-	return int(list.get_item_metadata(selected[0]))
-
-func _restore_selection(list: ItemList, pid: int) -> void:
-	if pid < 0:
-		return
-	for i in list.item_count:
-		if int(list.get_item_metadata(i)) == pid:
-			list.select(i)
-			return
-
-## Feldspieler in Aufstellungs-Reihenfolge, mit der Position, die sie GERADE spielen.
-func _fill_field_list(lineup: Array) -> void:
-	_field_list.clear()
-	for pid in lineup:
-		var p := Game.get_player(pid)
-		var slot := _my_sim._slot_of(pid, _my_home)
-		var pos_txt := slot if slot == p.pos else "%s (%s)" % [slot, p.pos]
-		var cond := int(_my_sim.cond[pid])
-		var idx := _field_list.add_item("%-9s %s · St %d · Frische %d%%" % [pos_txt, p.full_name(), p.strength_at(slot), cond])
-		_field_list.set_item_metadata(idx, pid)
-		if cond < 40:
-			_field_list.set_item_custom_fg_color(idx, UITheme.DANGER)
-		elif cond < 60:
-			_field_list.set_item_custom_fg_color(idx, UITheme.WARN)
-
-func _fill_bench_list(ids: Array) -> void:
-	_bench_list.clear()
-	var sorted := ids.duplicate()
-	sorted.sort_custom(func(a, b):
-		var order_a: int = PlayerData.POSITIONS.find(Game.get_player(a).pos)
-		var order_b: int = PlayerData.POSITIONS.find(Game.get_player(b).pos)
-		return order_a < order_b)
-	for pid in sorted:
-		var p := Game.get_player(pid)
-		var joker := "  🃏" if p.has_trait("Joker") else ""
-		var idx := _bench_list.add_item("%-4s %s · St %d · Frische %d%%%s" % [p.pos, p.full_name(), p.strength, int(_my_sim.cond[pid]), joker])
-		_bench_list.set_item_metadata(idx, pid)
 
 # ------------------------------------------------------------------ Anzeige
 
@@ -748,7 +755,7 @@ func _open_overlay() -> void:
 
 func _close_overlay() -> void:
 	_overlay.visible = false
-	_refresh_tactic_panel()
+	_refresh_team_panels()
 	if _was_running and not _my_sim.finished:
 		_set_paused(false)
 

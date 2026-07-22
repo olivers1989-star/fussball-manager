@@ -161,6 +161,26 @@ func _fill_slots(slots: Array, pool: Array) -> Array:
 			eleven[i] = _pick_for_slot(sorted, used, func(_p): return true)
 	return eleven.filter(func(pid): return pid > 0)
 
+## KI: Wählt die Formation, die zum VERFÜGBAREN Kader passt – jede Formation
+## wird mit ihrer besten Elf bewertet (Stärke der Spieler auf ihren Slots).
+## Ein kleiner Zufallsbonus sorgt für Vielfalt zwischen ähnlich guten Systemen.
+func pick_best_formation(all_players: Dictionary) -> String:
+	var best_name: String = formation
+	var best_score := -1.0
+	for name in FORMATIONS:
+		var eleven := best_eleven(all_players, name)
+		if eleven.size() < 11:
+			continue
+		var slots: Array = FORMATIONS[name]
+		var score := 0.0
+		for i in 11:
+			score += all_players[eleven[i]].strength_at(slots[i])
+		score += randf_range(0.0, 6.0)
+		if score > best_score:
+			best_score = score
+			best_name = name
+	return best_name
+
 ## Sortiert eine vorhandene Startelf slot-treu um (z. B. nach dem Laden alter
 ## Spielstände oder einem Preset-Wechsel mit denselben Spielern). Nutzt die
 ## Zonen der aktuellen Feldpunkte, sonst die Slots des Formations-Presets.

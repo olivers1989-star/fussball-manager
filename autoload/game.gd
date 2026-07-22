@@ -412,10 +412,19 @@ func start_matchday() -> Dictionary:
 	for lid in world.leagues:
 		var lg: LeagueData = world.leagues[lid]
 		for f in lg.fixtures_for_round(matchday()):
+			# KI-Vereine reagieren auf ihren verfügbaren Kader: passende Formation
+			# wählen (Verletzte/Gesperrte eingerechnet) und beste Elf aufstellen
+			for cid in [int(f.home), int(f.away)]:
+				if cid != my_club_id:
+					var c := club(cid)
+					c.formation = c.pick_best_formation(world.players)
+					c.lineup = c.best_eleven(world.players)
+					c.lineup_spots = []
 			var sim := MatchSim.new()
 			sim.setup(club(int(f.home)), club(int(f.away)), world.players)
 			sim.fixture = f
 			sim.league_name = lg.name
+			_set_ai_mentality(sim)
 			if int(f.home) == my_club_id:
 				sim.factor_h = tactic_factor
 				sim.ai_h = false
@@ -434,6 +443,28 @@ func start_matchday() -> Dictionary:
 		else:
 			my_sim.plan_a = plan
 	return {"mine": my_sim, "others": others}
+
+## KI-Grundausrichtung: Außenseiter mauern, klare Favoriten drücken –
+## plus etwas Trainer-Eigenart, damit nicht alle gleich spielen.
+func _set_ai_mentality(sim: MatchSim) -> void:
+	var str_h := sim.home.overall_strength(world.players)
+	var str_a := sim.away.overall_strength(world.players)
+	if sim.home.id != my_club_id:
+		var diff_h := str_h - str_a
+		if diff_h <= -5.0 or (diff_h < 0.0 and randf() < 0.3):
+			sim.mentality_h = "defensiv"
+		elif diff_h >= 6.0 or (diff_h > 2.0 and randf() < 0.35):
+			sim.mentality_h = "offensiv"
+		elif randf() < 0.12:
+			sim.mentality_h = ["defensiv", "offensiv"].pick_random()
+	if sim.away.id != my_club_id:
+		var diff_a := str_a - str_h
+		if diff_a <= -3.0 or (diff_a < 0.0 and randf() < 0.4):
+			sim.mentality_a = "defensiv"
+		elif diff_a >= 8.0 or (diff_a > 4.0 and randf() < 0.3):
+			sim.mentality_a = "offensiv"
+		elif randf() < 0.12:
+			sim.mentality_a = ["defensiv", "offensiv"].pick_random()
 
 ## Schreibt die zu Ende simulierten Spiele in den Spielplan und schließt den Spieltag ab.
 func finish_matchday(md: Dictionary) -> void:
