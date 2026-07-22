@@ -132,14 +132,28 @@ class RosterRow extends PanelContainer:
 		if not Game.get_player(pid).is_available():
 			return null
 		tab.make_drag_preview(self, pid)
+		# Startelf-Spieler als "slot" ziehen (verschieben), sonst als "roster" (einwechseln)
+		var lineup: Array = Game.my_club().lineup
+		if lineup.has(pid):
+			return {"kind": "slot", "slot": lineup.find(pid), "pid": pid}
 		return {"kind": "roster", "pid": pid}
+
+	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
+		return data is Dictionary and data.get("kind", "") in ["slot", "bench", "roster"]
+
+	## Drop einer Zeile auf eine andere Zeile: Spieler tauschen bzw. einwechseln.
+	func _drop_data(_at: Vector2, data: Variant) -> void:
+		tab.drop_on_roster_player(pid, data)
 
 	func _gui_input(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.pressed:
 			if event.button_index == MOUSE_BUTTON_RIGHT:
 				tab._profile.open_for(pid)
-			elif event.button_index == MOUSE_BUTTON_LEFT and event.double_click:
-				tab._profile.open_for(pid)
+			elif event.button_index == MOUSE_BUTTON_LEFT:
+				if event.double_click:
+					tab._profile.open_for(pid)
+				else:
+					tab.select_player(pid)
 
 # ------------------------------------------------------------------ Aufbau
 
@@ -170,19 +184,55 @@ func _init() -> void:
 	top.add_child(_summary)
 
 	var main := HBoxContainer.new()
-	main.add_theme_constant_override("separation", 14)
+	main.add_theme_constant_override("separation", 12)
 	main.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(main)
+
+	# ============================================ LINKS: detaillierte Spielerliste
+	var list_card := PanelContainer.new()
+	var list_sb := UITheme.box(UITheme.SURFACE, 12, UITheme.BORDER)
+	list_sb.set_content_margin_all(10)
+	list_card.add_theme_stylebox_override("panel", list_sb)
+	list_card.custom_minimum_size = Vector2(600, 0)
+	main.add_child(list_card)
+	var list_box := VBoxContainer.new()
+	list_box.add_theme_constant_override("separation", 4)
+	list_card.add_child(list_box)
+	var list_title := Label.new()
+	list_title.text = "Spielerliste"
+	list_title.add_theme_font_size_override("font_size", 17)
+	list_title.add_theme_color_override("font_color", UITheme.ACCENT)
+	list_box.add_child(list_title)
+	list_box.add_child(_table_header())
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	list_box.add_child(scroll)
+	_roster_box = VBoxContainer.new()
+	_roster_box.add_theme_constant_override("separation", 2)
+	_roster_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_roster_box)
+
+	# ============================================ RECHTS: Spielfeld + Ersatzbank
+	var pitch_col := VBoxContainer.new()
+	pitch_col.add_theme_constant_override("separation", 6)
+	pitch_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pitch_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	main.add_child(pitch_col)
+
+	var pitch_row := HBoxContainer.new()
+	pitch_row.add_theme_constant_override("separation", 8)
+	pitch_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	pitch_col.add_child(pitch_row)
 
 	_pitch = PitchControl.new()
 	_pitch.tab = self
 	_pitch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_pitch.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_pitch.size_flags_stretch_ratio = 1.15
 	_pitch.custom_minimum_size = Vector2(430, 520)
 	_pitch.clip_contents = true
 	_pitch.resized.connect(_layout_pitch)
-	main.add_child(_pitch)
+	pitch_row.add_child(_pitch)
 	for i in 11:
 		var chip := SlotChip.new(self, i)
 		chip.pressed.connect(_on_chip_clicked.bind(i))
@@ -190,14 +240,14 @@ func _init() -> void:
 		_pitch.add_child(chip)
 		_chips.append(chip)
 
-	# Ersatzbank als Spalte NEBEN dem Feld – so bleiben die Außenbahnen frei
+	# Ersatzbank als schmale Spalte am rechten Feldrand
 	var bench_col := VBoxContainer.new()
-	bench_col.add_theme_constant_override("separation", 5)
-	bench_col.custom_minimum_size = Vector2(190, 0)
-	main.add_child(bench_col)
+	bench_col.add_theme_constant_override("separation", 4)
+	bench_col.custom_minimum_size = Vector2(172, 0)
+	pitch_row.add_child(bench_col)
 	var bench_title := Label.new()
-	bench_title.text = "🪑 Ersatzbank (max. %d)" % ClubData.BENCH_SIZE
-	bench_title.add_theme_font_size_override("font_size", 14)
+	bench_title.text = "🪑 Bank (max. %d)" % ClubData.BENCH_SIZE
+	bench_title.add_theme_font_size_override("font_size", 13)
 	bench_title.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	bench_col.add_child(bench_title)
 	for i in ClubData.BENCH_SIZE:
@@ -206,36 +256,35 @@ func _init() -> void:
 		bc.gui_input.connect(_on_bench_gui_input.bind(i))
 		bench_col.add_child(bc)
 		_bench_chips.append(bc)
-	var bench_hint := Label.new()
-	bench_hint.text = "Im Spiel darf nur von\ndieser Bank gewechselt\nwerden."
-	bench_hint.add_theme_font_size_override("font_size", 11)
-	bench_hint.add_theme_color_override("font_color", UITheme.TEXT_DIM)
-	bench_col.add_child(bench_hint)
 
-	# Rechts: detaillierte Kaderliste
-	var right := VBoxContainer.new()
-	right.add_theme_constant_override("separation", 6)
-	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	main.add_child(right)
-	right.add_child(heading("Kader"))
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	right.add_child(scroll)
-	_roster_box = VBoxContainer.new()
-	_roster_box.add_theme_constant_override("separation", 4)
-	_roster_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_roster_box)
 	var hint := info_label()
-	hint.text = "Spieler frei aufs Feld ziehen – wo du ihn ablegst, spielt er (Zonen-Erkennung).\nDoppel-/Rechtsklick: Spielerprofil."
-	right.add_child(hint)
-
+	hint.text = "Spieler aus der Liste frei aufs Feld ziehen – wo du ihn ablegst, spielt er. Doppel-/Rechtsklick: Profil."
+	pitch_col.add_child(hint)
 	_message = info_label()
-	box.add_child(_message)
+	pitch_col.add_child(_message)
 
 	_profile = PlayerProfileDialog.new()
 	add_child(_profile)
+
+## Kopfzeile der Spielerliste (Spaltenüberschriften).
+func _table_header() -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UITheme.box(UITheme.FIELD, 6))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	panel.add_child(row)
+	for col in [["Pos", 38], ["Spielt", 46], ["Name", 0], ["Alt", 30], ["Talent", 66], ["Stä", 34], ["Fri", 40], ["Fo", 26]]:
+		var l := Label.new()
+		l.text = col[0]
+		l.add_theme_font_size_override("font_size", 11)
+		l.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		if int(col[1]) == 0:
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		else:
+			l.custom_minimum_size = Vector2(int(col[1]), 0)
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		row.add_child(l)
+	return panel
 
 # ------------------------------------------------------------------ Anzeige
 
@@ -294,7 +343,7 @@ func _refresh_chips() -> void:
 		_style_chip(chip)
 	var avg := total / 11.0
 	var warn_text := "  ·  ⚠ %d positionsfremd" % warnings if warnings > 0 else ""
-	_summary.text = "Ausrichtung %s · Elf-Stärke auf Position: Ø %.1f%s" % [c.shape_label(), avg, warn_text]
+	_summary.text = "Mannschaftsstärke %d  ·  Ausrichtung %s  ·  Ø auf Position %.1f%s" % [total, c.shape_label(), avg, warn_text]
 	_layout_pitch()
 
 func _style_chip(chip: SlotChip) -> void:
@@ -376,91 +425,144 @@ func _layout_pitch() -> void:
 		chip.position.x = clampf(chip.position.x, 2, s.x - chip_size.x - 2)
 		chip.position.y = clampf(chip.position.y, 2, s.y - chip_size.y - 2)
 
+## Baut die FM-artige Spielerliste: Startelf (in Aufstellungs-Reihenfolge),
+## dann Bank, dann Reserve – jede Gruppe mit Zwischenüberschrift.
 func _refresh_roster() -> void:
 	for child in _roster_box.get_children():
 		child.queue_free()
 	var c := Game.my_club()
-	var ids: Array = c.player_ids.filter(func(pid): return not c.lineup.has(pid))
-	ids.sort_custom(func(a, b):
+
+	_roster_box.add_child(_group_header("STARTELF", c.lineup.size()))
+	var slots := c.lineup_slots()
+	for i in c.lineup.size():
+		_roster_box.add_child(_build_roster_row(c.lineup[i], "start", slots[i] if i < slots.size() else ""))
+
+	var bench_ids: Array = c.bench.filter(func(pid): return pid > 0 and not c.lineup.has(pid))
+	_roster_box.add_child(_group_header("ERSATZBANK", bench_ids.size()))
+	for pid in bench_ids:
+		_roster_box.add_child(_build_roster_row(pid, "bench", ""))
+
+	var reserve: Array = c.player_ids.filter(func(pid): return not c.lineup.has(pid) and not bench_ids.has(pid))
+	reserve.sort_custom(func(a, b):
 		var pa := Game.get_player(a)
 		var pb := Game.get_player(b)
-		var bench_a := c.bench.has(a)
-		var bench_b := c.bench.has(b)
-		if bench_a != bench_b:
-			return bench_a
 		var order_a: int = PlayerData.POSITIONS.find(pa.pos)
 		var order_b: int = PlayerData.POSITIONS.find(pb.pos)
 		if order_a != order_b:
 			return order_a < order_b
 		return pa.effective_rating() > pb.effective_rating())
-	for pid in ids:
-		_roster_box.add_child(_build_roster_row(pid, c.bench.has(pid)))
+	_roster_box.add_child(_group_header("RESERVE", reserve.size()))
+	for pid in reserve:
+		_roster_box.add_child(_build_roster_row(pid, "reserve", ""))
 
-func _build_roster_row(pid: int, on_bench: bool) -> RosterRow:
+func _group_header(text: String, count: int) -> Label:
+	var l := Label.new()
+	l.text = "  %s (%d)" % [text, count]
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", UITheme.ACCENT)
+	l.add_theme_stylebox_override("normal", UITheme.box(Color(0.08, 0.12, 0.10, 1.0), 4))
+	return l
+
+## Eine kompakte Tabellenzeile passend zu den Spaltenüberschriften.
+func _build_roster_row(pid: int, kind: String, zone: String) -> RosterRow:
 	var p := Game.get_player(pid)
 	var row := RosterRow.new()
 	row.pid = pid
 	row.tab = self
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.10, 0.14, 0.12, 1.0) if on_bench else UITheme.SURFACE
-	style.set_corner_radius_all(8)
-	style.set_border_width_all(1)
-	style.border_color = Color(1, 1, 1, 0.08)
-	style.set_content_margin_all(7)
+	match kind:
+		"start": style.bg_color = Color(0.10, 0.17, 0.12, 1.0)
+		"bench": style.bg_color = Color(0.12, 0.13, 0.16, 1.0)
+		_: style.bg_color = Color(0.09, 0.11, 0.13, 0.6)
+	style.set_corner_radius_all(5)
+	style.set_content_margin_all(4)
+	if pid == _selected_pid:
+		style.set_border_width_all(2)
+		style.border_color = Color.WHITE
 	row.add_theme_stylebox_override("panel", style)
 	row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
 	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 8)
+	line.add_theme_constant_override("separation", 6)
 	row.add_child(line)
-	line.add_child(UITheme.mini_pill(p.pos, GROUP_COLORS[p.group()].darkened(0.35), Color.WHITE, 36))
-	line.add_child(Flags.icon(p.nat, 15))
 
-	var name_box := VBoxContainer.new()
-	name_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_box.add_theme_constant_override("separation", 0)
-	line.add_child(name_box)
+	# Pos (natürliche Position)
+	var pos_cell := CenterContainer.new()
+	pos_cell.custom_minimum_size = Vector2(38, 0)
+	pos_cell.add_child(UITheme.mini_pill(p.pos, GROUP_COLORS[p.group()].darkened(0.3), Color.WHITE, 34))
+	line.add_child(pos_cell)
+
+	# Spielt: aktuelle Zone (Startelf) mit Vertrautheits-Farbe, sonst –
+	var zone_lbl := Label.new()
+	zone_lbl.custom_minimum_size = Vector2(46, 0)
+	zone_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	zone_lbl.add_theme_font_size_override("font_size", 13)
+	if zone != "" and PlayerData.GROUP_OF.has(zone):
+		var fam := p.position_familiarity(zone)
+		zone_lbl.text = zone
+		zone_lbl.add_theme_color_override("font_color", UITheme.ACCENT if fam >= 0.999 else (UITheme.TEXT if fam >= 0.72 else UITheme.WARN))
+	else:
+		zone_lbl.text = "–"
+		zone_lbl.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	line.add_child(zone_lbl)
+
+	# Name mit Flagge + Verletzungs-/Sperr-Symbol
 	var name_row := HBoxContainer.new()
-	name_row.add_theme_constant_override("separation", 6)
-	name_box.add_child(name_row)
+	name_row.add_theme_constant_override("separation", 5)
+	name_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(name_row)
+	name_row.add_child(Flags.icon(p.nat, 13))
 	var name_label := Label.new()
 	name_label.text = p.full_name()
-	name_label.add_theme_font_size_override("font_size", 14)
+	name_label.add_theme_font_size_override("font_size", 13)
+	name_label.clip_text = true
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_row.add_child(name_label)
-	if on_bench:
-		name_row.add_child(UITheme.mini_pill("BANK", Color("#3f3f46"), Color.WHITE, 42))
-	var talent := Label.new()
-	talent.text = p.talent_stars()
-	talent.add_theme_font_size_override("font_size", 11)
-	talent.add_theme_color_override("font_color", UITheme.WARN if p.talent >= 4 else UITheme.TEXT_DIM)
-	name_row.add_child(talent)
-	var sub := Label.new()
-	var note_txt := (", Ø %.1f" % p.avg_rating()).replace(".", ",") if p.matches_season > 0 else ""
-	var traits_txt := (" · " + ", ".join(p.traits)) if not p.traits.is_empty() else ""
-	sub.text = "%d J. · %d Sp.%s · %d Tore · %s%s" % [p.age, p.matches_season, note_txt, p.goals_season, Fmt.money(p.market_value()), traits_txt]
-	sub.add_theme_font_size_override("font_size", 11)
-	sub.add_theme_color_override("font_color", UITheme.TEXT_DIM)
-	sub.clip_text = true
-	name_box.add_child(sub)
+	if p.is_injured():
+		name_row.add_child(_cell_icon("🚑", UITheme.DANGER))
+	elif p.is_suspended():
+		name_row.add_child(_cell_icon("🟥", UITheme.WARN))
+	elif not p.learned_positions().is_empty():
+		name_row.add_child(_cell_icon("⇄", UITheme.TEXT_DIM))
 
-	var st := Label.new()
-	st.text = "St %d" % p.strength
-	st.add_theme_font_size_override("font_size", 16)
-	line.add_child(st)
+	# Alter
+	line.add_child(_num_cell("%d" % p.age, 30, UITheme.TEXT))
+	# Talent
+	var tal := Label.new()
+	tal.text = p.talent_stars()
+	tal.custom_minimum_size = Vector2(66, 0)
+	tal.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tal.add_theme_font_size_override("font_size", 11)
+	tal.add_theme_color_override("font_color", UITheme.WARN if p.talent >= 4 else UITheme.TEXT_DIM)
+	line.add_child(tal)
+	# Stärke
+	line.add_child(_num_cell("%d" % p.strength, 34, UITheme.TEXT))
+	# Frische
+	line.add_child(_num_cell("%d%%" % int(p.condition), 40, UITheme.TEXT_DIM if p.condition >= 70 else UITheme.WARN))
+	# Form
 	var form := Label.new()
 	form.text = Fmt.form_icon(p.form)
+	form.custom_minimum_size = Vector2(26, 0)
+	form.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	form.add_theme_color_override("font_color", Fmt.form_color(p.form))
 	line.add_child(form)
-	var cond := Label.new()
-	cond.text = "%d%%" % int(p.condition)
-	cond.add_theme_font_size_override("font_size", 12)
-	cond.add_theme_color_override("font_color", UITheme.TEXT_DIM if p.condition >= 70 else UITheme.WARN)
-	line.add_child(cond)
-	if p.is_injured():
-		line.add_child(UITheme.mini_pill("🚑 %d" % p.injury_matchdays, Color("#7f1d1d"), Color.WHITE, 48))
-	elif p.is_suspended():
-		line.add_child(UITheme.mini_pill("🟥 %d" % p.suspended_matchdays, Color("#854d0e"), Color.WHITE, 48))
 	return row
+
+func _num_cell(text: String, width: int, color: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.custom_minimum_size = Vector2(width, 0)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", color)
+	return l
+
+func _cell_icon(text: String, color: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_color_override("font_color", color)
+	return l
 
 ## Drag-Vorschau: sieht aus wie der Spieler-Kasten und hängt ZENTRIERT am
 ## Cursor – der Kasten landet also genau dort, wo man ihn sieht.
@@ -563,6 +665,25 @@ func drop_on_chip(slot: int, data: Dictionary) -> void:
 			_refresh_all()
 		"roster":
 			_insert_at_slot(int(data.pid), slot)
+
+## Drop einer Listenzeile auf eine andere: je nach Ziel tauschen/einwechseln.
+func drop_on_roster_player(target_pid: int, data: Dictionary) -> void:
+	var c := Game.my_club()
+	if int(data.get("pid", -1)) == target_pid:
+		return
+	var slot := c.lineup.find(target_pid)
+	if slot >= 0:
+		drop_on_chip(slot, data)
+		return
+	var bench_idx := c.bench.find(target_pid)
+	if bench_idx >= 0:
+		drop_on_bench(bench_idx, data)
+		return
+	# Ziel ist ein Reservespieler: den gezogenen Spieler in die Reserve schicken
+	var pid_in := int(data.get("pid", -1))
+	if c.lineup.has(pid_in):
+		_message.text = "Ziehe einen Reservespieler auf einen Feld- oder Bankspieler, um ihn einzuwechseln."
+	_refresh_all()
 
 func _insert_at_slot(pid_in: int, slot: int) -> void:
 	var c := Game.my_club()
