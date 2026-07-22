@@ -1,51 +1,90 @@
 # Fussball Manager
 
-Ein Fußball-Manager-Spiel für den PC, entwickelt mit der [Godot Engine 4.7](https://godotengine.org).
+Ein Fußball-Manager als **Windows-Spiel**, entwickelt mit der [Godot Engine 4.7](https://godotengine.org) – zwei Ligen, 36 Vereine, eine feste Datenbank mit 900 Profispielern und eine Match-Engine, in der jedes der 23 Spielerattribute wirklich zählt.
 
-## Spielen / Entwickeln
+> **Spielen:** Den fertigen Installer gibt es unter [Releases](../../releases/latest). Updates werden einfach über die bestehende Installation installiert – Spielstände bleiben erhalten.
 
-- **Spiel starten:** `start_spiel.bat` (führt das Projekt direkt aus)
-- **Editor öffnen:** `start_editor.bat` (öffnet das Projekt im Godot-Editor)
+---
 
-Die Godot-Engine liegt unter `C:\Tools\Godot`.
+## Inhalt
 
-## Features (Ausbaustufe 1)
+- [Die Grundidee](#die-grundidee)
+- [Features im Überblick](#features-im-überblick)
+- [Für Entwickler](#für-entwickler)
+- [Eigene Daten anpassen](#eigene-daten-anpassen)
+- [Roadmap](#roadmap)
 
-- Spielstart-Assistent in 3 Schritten: **Trainerprofil anlegen** (Name, Geburtsdatum, Herkunftsort, Nationalität + Fähigkeiten-Verteilung) → **Spielmodus wählen** → **Verein/Angebot**
-- Zwei Spielmodi: **Echte Karriere** (Start bei kleinen Zweitligisten, mit wachsendem Ruf kommen Angebote besserer Vereine) und **Vereinsauswahl** (freie Wahl), jeweils mit Schwierigkeit Leicht/Normal/Schwer
-- **Trainer-Fähigkeiten** mit Spielwirkung: Taktik (Teamstärke im Spiel), Training (Formaufbau), Motivation (fängt Niederlagen ab), Verhandlung (bessere Transferpreise), Jugendarbeit (stärkerer Nachwuchs)
-- 2 Ligen (Erste & Zweite Liga) mit je 18 fiktiven Vereinen, die den echten deutschen Ligen nachempfunden sind (z. B. „FC Bavaria München", „BV Westfalia Dortmund", „FC Knappen Gelsenkirchen 04"), inkl. Auf-/Abstieg (3 Vereine)
-- Prozedural generierte Kader (~860 Spieler) mit Stärke, Form, Alter, Vertrag, Gehalt und Marktwert
-- Saison mit 34 Spieltagen, Spielplan (Hin-/Rückrunde) und Tabellen
-- **Echte Live-Simulation**: Das Spiel wird Minute für Minute berechnet – nichts steht beim Anpfiff fest. Über das Taktik-Panel greifst du jederzeit ein: **Spielweise** (defensiv/ausgewogen/offensiv) und **Auswechslungen** (max. 5) wirken ab der nächsten Minute. Pause- und Halbzeit-Stopp inklusive, KI-Gegner reagieren in Minute 60/75 auf den Spielstand
-- Text-Liveticker (Tore, Großchancen, Karten, Platzverweise, Wechsel, Verletzungen) in wählbarer Geschwindigkeit, dazu die **Konferenz** der anderen Spiele deiner Liga in Echtzeit
-- **Kondition & Ausdauer**: Spieler verlieren im Spiel Frische (abhängig von individueller Ausdauer und Spielweise) und regenerieren zwischen den Spieltagen nur teilweise – Rotation ist Pflicht. Die Leistung jedes Spielers ergibt sich aus Stärke × Form × **Tagesform** × Frische; der Stärkste gewinnt also nicht automatisch
-- **Verletzungen** mit Zwangswechsel und Ausfallzeiten (1–5 Spieltage) sowie **Einzelnoten** (1,0–6,0) für jeden eingesetzten Spieler
-- **Sperren**: jede 5. Gelbe Karte = 1 Spieltag, Rote Karte = 2 Spieltage (der Spieler fliegt sofort vom Platz)
-- **Training**: Wochenschwerpunkt wählbar (Ausgewogen / Kondition / Regeneration / Leistung) mit echten Effekten auf Frische, Form, Ausdauer und die Entwicklung junger Spieler – inkl. Fitness-Übersicht des Kaders
-- **Aufstellung mit freiem Positionieren**: Spieler irgendwo aufs 2D-Spielfeld ziehen – er spielt exakt dort. Das Feld ist in **Zonen** geteilt (TW · LV/IV/RV · DM/ZM/OM mit LM/RM außen · LA/MS/RA), die Zone bestimmt die gespielte Position; auch extreme Ausrichtungen (5 Stürmer!) sind möglich, die Ausrichtungs-Anzeige (z. B. „5-4-1") rechnet live mit. **16 Formations-Presets** (4-4-2, 4-4-2 Raute, 4-3-3, 4-2-3-1, 4-5-1, 3-5-2, 5-3-2, 4-4-1-1, 4-3-2-1 Tannenbaum, 4-1-3-2, 4-1-4-1, 5-4-1, 3-4-3, 4-2-4 u. a.) als Startpunkt, daneben die **Ersatzbank (max. 7 Plätze)**, rechts die detaillierte Kaderliste mit **Flaggen**, Talent, Marktwert, Ø-Note und Eigenschaften. **Slot-basiert mit Spielwirkung**: Jeder Spieler wird im Spiel auf seiner Zone bewertet. **Jeder darf überall spielen** – naheliegende Nebenrollen (RM als RV oder RA) mit kleinem Abzug, gruppenintern etwas mehr, gruppenfremd deutlich, Feldspieler im Tor als Notnagel. **Nebenpositionen werden durch Einsätze erlernt**: Spielt jemand wiederholt auf einer fremden Position, steigt seine Vertrautheit dort bis zur Meisterschaft – gelernte Positionen stehen im Spielerprofil
-- **Moderne Spielansicht**: Anzeigetafel mit Vereins-Badges, Ausrichtung, Kaderstärke und Spielfortschritts-Balken; Liveticker mit Minuten-Chips und Ereignis-Symbolen (Tore fett und farbig); Taktik-Karte mit Spielweise-Schaltern, Feldliste (gespielte Position + Live-Frische) und Bank; Konferenz mit Live-Minute; Noten-Übersicht mit Torschützen nach Abpfiff
-- **Nationalitäten** für alle Spieler (aus den Namen abgeleitet, in der Datenbank editierbar – später Basis für Nationalmannschaften) und **20 Spielereigenschaften** mit echter Spielwirkung: Trainingsweltmeister/-muffel (Entwicklungstempo), Joker (stärker nach Einwechslung), Dauerbrenner (Frische), Eisenmann/Verletzungsanfällig (Verletzungsrisiko), Elfmeterspezialist/-killer, Freistoßspezialist, Kopfballungeheuer, Knipser, Spielmacher, Führungsspieler, Eiskalt/Nervenbündel (Schlussphase), Heimspielheld/Auswärtskämpfer, Spätzünder, Fairplay/Hitzkopf (Karten)
-- Transfermarkt: Spieler kaufen und verkaufen, mit **realistischen Marktwerten** (Zweitliga-Stammspieler unter 1 Mio, Bundesliga-Stammspieler 5–12 Mio, Weltklasse 80–150 Mio – getrieben von Stärke, Alter, Potenzial und Saisonleistung)
-- Finanzen: Budget, Ticketeinnahmen, Sponsor-/TV-Gelder und Gehälter auf realistischer Skala (abgeleitet vom tatsächlichen Kader), Buchungshistorie
-- Saisonwechsel: Meister, Auf-/Absteiger, Spieleralterung & -entwicklung, **individuelle Karriereenden** (Feldspieler meist 33–37, Torhüter bis ~40, Stars länger, Ausgelaugte früher) mit dauerhaftem Archiv im Spielstand, Jugendspieler rücken sichtbar nach (News + Saisonbilanz)
-- Speichern & Laden (JSON-Spielstände unter `%APPDATA%\Godot\app_userdata\Fussball Manager\saves`)
+---
 
-## Design
+## Die Grundidee
 
-Das komplette Erscheinungsbild wird zentral in [scripts/ui/ui_theme.gd](scripts/ui/ui_theme.gd) definiert (dunkles Manager-Design, Vereins-Badges, Karten-Layouts, Sidebar-Navigation). Farben und Stile dort ändern sich überall im Spiel.
+Drei Prinzipien tragen das ganze Spiel:
 
-## Eigene Daten (Vereine & Namen anpassen)
+1. **Kein Ergebnis steht beim Anpfiff fest.** Jedes Spiel wird Minute für Minute berechnet – aus Taktik, Aufstellung, Attributen, Frische, Form und Tagesform. Der Stärkste gewinnt *nicht* automatisch.
+2. **Jedes Attribut hat eine konkrete Wirkung.** Kein Wert ist Dekoration – von Abschluss über Konzentration bis Robustheit greift jeder Wert an einer nachweisbaren Stelle in die Engine ein (belegt durch automatisierte Mechanik-Tests).
+3. **Das Stärkesystem ist dynamisch.** Ein 14-Jähriger mit Stärke 17 kann zum Superstar reifen – Talent (1–5★) und Potenzial entscheiden über den Weg, nicht der Startwert.
 
-Alle Stammdaten liegen als editierbare JSON-Dateien in [data/](data/):
+## Features im Überblick
 
-- `clubs.json` — Vereine (Name, Kürzel, Stadion, Kapazität, Stärke, Liga, Vereinsfarbe, Vorsitzender)
-- `players.json` — die **feste Spielerdatenbank**: 900 Profispieler mit Namen, Position, Alter, allen 23 Attributen, Talent, Potenzial, Ausdauer und Vertragslaufzeit. Jeder neue Spielstand startet mit exakt diesen Kadern (nur Jugendspieler werden zufällig erzeugt). Grundlage für einen späteren Editor. Neu generieren: Datei löschen und `tests/generate_database.tscn` ausführen.
-- `names.json` — Vor-/Nachnamen für die Spielergenerierung (Jugend) sowie Sponsorennamen
+<details open>
+<summary><b>Karrierestart</b></summary>
 
-Wer echte Vereins- und Spielernamen möchte, trägt sie einfach dort ein (nur für den Privatgebrauch!).
+- **Spielstart-Assistent in 3 Schritten** mit Fortschrittsanzeige: Trainerprofil (Name, Geburtsdatum, Herkunft, Nationalität mit Flagge, Fähigkeiten-Verteilung) → Spielmodus → Verein & Vertrag
+- **Zwei Spielmodi:** *Echte Karriere* (Start bei kleinen Zweitligisten, mit wachsendem Ruf melden sich größere Vereine) und *Vereinsauswahl* (freie Wahl), je mit Schwierigkeit Leicht/Normal/Schwer
+- **Trainer-Fähigkeiten mit Spielwirkung:** Taktik (Teamstärke), Training (Formaufbau), Motivation (fängt Niederlagen ab, entscheidet über die Ansprache), Verhandlung (Transferpreise), Jugendarbeit (stärkerer Nachwuchs)
+- **Vereinsspezifische Angebote:** Jeder Verein hat einen Charakter (schlafender Riese / Abstiegskampf / Ausbildungsverein), der Vorstandsbotschaft, Laufzeit und Ton prägt
+- **Echte Vertragsverhandlung** mit dem Vorstandsvorsitzenden: Laufzeit, Gehalt, Erfolgsprämie, Siegprämie und **Ausstiegsklausel** – mit Gesprächsklima, Gegenangeboten, Abbruchrisiko und handschriftlicher Unterschrift auf dem Vertragsdokument
+</details>
 
-## Projektstruktur
+<details open>
+<summary><b>Spieler & Kader</b></summary>
+
+- **Feste Spielerdatenbank:** 900 Profis in `data/players.json` – jeder neue Spielstand startet mit identischen Kadern (nur Jugendspieler werden gewürfelt). Vollständig editierbar
+- **23 Attribute** in vier Kategorien (Technisch, Mental, Physisch, Torwart), positionsabhängig gewichtet zur Gesamtstärke
+- **Talent (1–5★) und Potenzial:** 5★-Talente sind eine Rarität (~2 %); die Entwicklung folgt Alterskurve, Einsatzzeit, Noten und Entschlossenheit
+- **20 Spielereigenschaften mit echter Spielwirkung:** Trainingsweltmeister/-muffel, Joker, Dauerbrenner, Eisenmann/Verletzungsanfällig, Elfmeterspezialist/-killer, Freistoßspezialist, Kopfballungeheuer, Knipser, Spielmacher, Führungsspieler, Eiskalt/Nervenbündel, Heimspielheld/Auswärtskämpfer, Spätzünder, Fairplay/Hitzkopf
+- **Nationalitäten** mit gezeichneten Flaggen (20 Nationen) – Grundlage für spätere Nationalmannschaften
+- **Nebenpositionen:** Jeder darf überall spielen (naheliegende Rollen mit kleinem, gruppenfremde mit deutlichem Abzug) – und **erlernt fremde Positionen durch Einsätze** bis zur Meisterschaft
+- **FM-artige Spielerprofile** (Rechtsklick) mit allen Attributen als Balken, Positionen, Eigenschaften, Zustand und Saisonstatistik
+</details>
+
+<details open>
+<summary><b>Aufstellung & Taktik</b></summary>
+
+- **Aufstellungsbildschirm im Manager-Stil:** links die detaillierte Spielerliste (Position, gespielte Zone, Flagge, Alter, Talent, Stärke, Frische, Form), gruppiert in Startelf / Ersatzbank / Reserve – rechts das 2D-Spielfeld
+- **Freies Positionieren:** Spieler irgendwo aufs Feld ziehen – wo du ihn ablegst, spielt er. Das Feld ist in **Zonen** geteilt (TW · LV/IV/RV · DM/ZM/OM mit LM/RM außen · LA/MS/RA); auch extreme Ausrichtungen wie 5 Stürmer sind möglich, die Ausrichtungs-Anzeige rechnet live mit
+- **16 Formations-Presets:** 4-4-2, 4-4-2 Raute, 4-3-3, 4-2-3-1, 4-5-1, 3-5-2, 5-3-2, 4-4-1-1, 4-3-2-1 (Tannenbaum), 4-1-3-2, 4-1-4-1, 5-4-1, 3-4-3, 4-2-4 u. a.
+- **Aufgewertete Spielerkarten** mit farbiger Positions-Pille, farbcodierter Stärkezahl, Frische in Prozent und Frische-Balken
+- **Ersatzbank (max. 7):** Im Spiel darf nur von der nominierten Bank gewechselt werden
+- **Auswahl-Kriterien:** Schieberegler für Stärke / Frische / Form bestimmen, wonach „Beste Elf & Bank" aufstellt
+- Tauschen per Drag & Drop auf dem Feld **und** in der Liste
+</details>
+
+<details open>
+<summary><b>Spieltag</b></summary>
+
+- **Spieltagsankündigung** mit Wappen, Tabellenplätzen, Fakten-Vergleich (Kaderstärke, Saison, Form als Sterne, Hinspiel) und der **Ansprache vor dem Spiel** (4 Stufen – mutiger heißt mehr Wirkung *und* mehr Risiko)
+- **Live-Simulation Minute für Minute** mit Liveticker (Tore, Großchancen, Karten, Platzverweise, Wechsel, Verletzungen, Spielfluss-Kommentar) in wählbarer Geschwindigkeit
+- **Beide Mannschaften im Blick:** Aufstellungen mit gespielter Position, Stärke, Frische, Live-Note und Toren; dazu Statistik (Ballbesitz, Chancen, Ecken, Freistöße, Elfmeter, Karten) und die **Konferenz** der anderen Spiele
+- **Eingriffe:** Spielweise (defensiv/ausgewogen/offensiv), Aufstellungs-Overlay mit beiden Elfen – Positionen live umstellen und per Drag & Drop wechseln (max. 5)
+- **Ausführlicher Spielbericht:** Endstand mit Halbzeitstand und Spielanteilen, Torschützen-Timeline, Spieler des Spiels, komplette Statistik, Noten und alle weiteren Ergebnisse
+- **KI mit Handschrift:** Jeder Verein wählt vor dem Spieltag die Formation, die zu seinem verfügbaren Kader passt, und eine Grundausrichtung nach Kräfteverhältnis
+</details>
+
+<details open>
+<summary><b>Saison & Verwaltung</b></summary>
+
+- 2 Ligen à 18 fiktive Vereine nach dem Vorbild der echten deutschen Ligen, 34 Spieltage, Hin-/Rückrunde, Auf- und Abstieg (je 3)
+- **Kalender & Tagesrhythmus** mit Wochensimulation, Trainingsschwerpunkt und Spielvorbereitung am Vortag (Matchplan mit Gegneranalyse)
+- **Kondition, Form und Tagesform:** Rotation ist Pflicht – Frische regeneriert nur teilweise
+- **Verletzungen** (Zwangswechsel, 1–5 Spieltage) und **Sperren** (jede 5. Gelbe, Rot = 2 Spiele)
+- **Transfermarkt** mit realistischen Marktwerten (Zweitliga-Stammspieler unter 1 Mio, Bundesliga 5–12 Mio, Weltklasse 80–150 Mio)
+- **Finanzen** auf realistischer Skala: Budget, Ticketeinnahmen, Sponsor-/TV-Gelder und Gehälter aus dem tatsächlichen Kader abgeleitet
+- **Saisonwechsel:** Meister, Auf-/Absteiger, Alterung und Entwicklung, **individuelle Karriereenden** (Feldspieler 33–37, Torhüter bis ~40, Stars länger) mit dauerhaftem Archiv, nachrückende Jugendspieler
+- **Speichersystem** mit benannten Slots, Karten-Übersicht (Wappen, Tabellenplatz, Saison, Zeitstempel), Überschreiben, Löschen und Schnellspeichern
+</details>
+
+## Für Entwickler
 
 ```
 autoload/        Singletons: Data (Stammdaten & Weltgenerierung), Game (Spielstand & Regeln)
@@ -53,13 +92,44 @@ data/            Editierbare Stammdaten (JSON)
 scenes/          Godot-Szenen (Hauptmenü, Spielstart, Zentrale, Match)
 scripts/core/    Spiellogik: Spieler, Verein, Liga, Spielplan, Match-Engine
 scripts/ui/      Bildschirme und Tabs der Manager-Zentrale
+tests/           Automatisierte Tests und Werkzeuge (headless ausführbar)
+installer/       Inno-Setup-Skript für den Windows-Installer
 ```
 
-## Roadmap (weitere Ausbaustufen)
+- **Spiel starten:** `start_spiel.bat` · **Editor öffnen:** `start_editor.bat` (Godot liegt unter `C:\Tools\Godot`)
+- **Tests headless ausführen:**
+  ```bat
+  Godot_v4.7.1-stable_win64_console.exe --headless --path . res://tests/smoke_test.tscn
+  ```
+  Verfügbar sind u. a. `smoke_test` (Gesamtdurchlauf), `ui_test` (alle Bildschirme), `mechanik_test` (Wirkungsnachweis je Attribut), `aufstellung_test` (Zonen & Slot-System), `nebenpositionen_test`, `traits_test`, `finanz_test`, `migration_test`, `speichern_test`, `balance_test` und `saison_report` (5-Saisons-Auswertung als JSON)
+- **Design:** Das komplette Erscheinungsbild steckt zentral in [scripts/ui/ui_theme.gd](scripts/ui/ui_theme.gd)
 
-1. **Pokalwettbewerb** (K.-o.-Runden über beide Ligen)
-2. **Training & Spielerentwicklung** unter der Saison, Verletzungen
-3. **Vertragsverhandlungen** (Gehaltsforderungen, Ablösepoker, KI-Transfers)
-4. **Jugendakademie** mit Talenten und Förderung
-5. **Sponsorenverhandlungen & Stadionausbau**
-6. **2D-Spielfeldansicht** für den Liveticker
+## Eigene Daten anpassen
+
+Alle Stammdaten liegen als editierbare JSON-Dateien in [data/](data/):
+
+| Datei | Inhalt |
+|---|---|
+| `clubs.json` | Vereine: Name, Kürzel, Stadt, Stadion, Kapazität, Stärke, Liga, Vereinsfarbe, Vorstandsvorsitzender |
+| `players.json` | Die feste Spielerdatenbank: 900 Profis mit Name, Position, Alter, allen 23 Attributen, Talent, Potenzial, Ausdauer, Vertrag, Nationalität, Eigenschaften und Nebenpositionen |
+| `names.json` | Vor-/Nachnamen für generierte Spieler (Jugend) sowie Sponsorennamen |
+
+Spielerdatenbank neu würfeln: `players.json` löschen und `tests/generate_database.tscn` ausführen.
+Wer echte Vereins- und Spielernamen möchte, trägt sie dort ein (nur für den Privatgebrauch!).
+
+## Roadmap
+
+**Als Nächstes**
+
+1. **Kalender & Tagesereignisse** – realistische Sommervorbereitung, planbare Testspiele, echte Spielergespräche
+2. **Pokalwettbewerb** über beide Ligen (K.-o.-Runden)
+3. **Jugendakademie** mit fester Nachwuchsdatenbank und gezielter Förderung
+
+**Danach angedacht**
+
+4. **Editor** für Vereine, Spieler und Ligen-Grundlagen (Bankgröße, Auf-/Absteiger)
+5. **Moral & Mannschaftsklima** als eigener Faktor
+6. **Nationalmannschaften** auf Basis der Nationalitäten
+7. **Sponsorenverhandlungen & Stadionausbau**
+8. **Hall of Fame** aus dem Karriereenden-Archiv, Rekordlisten
+9. **KI-Transfers** zwischen den Vereinen, Ablösepoker
