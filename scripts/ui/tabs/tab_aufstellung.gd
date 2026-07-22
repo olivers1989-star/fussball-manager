@@ -271,13 +271,22 @@ func _refresh_chips() -> void:
 			var st := p.strength_at(chip.zone_pos)
 			total += st
 			var head := chip.zone_pos
+			var fam := p.position_familiarity(chip.zone_pos)
+			var fam_note := "eigene Position"
 			if p.pos != chip.zone_pos:
-				head += " ⚠" if p.group() != PlayerData.GROUP_OF[chip.zone_pos] else " ◊"
-			if p.group() != PlayerData.GROUP_OF[chip.zone_pos]:
-				warnings += 1
+				if fam >= PlayerData.SEC_LEARNED:
+					head += " ✓"   # gelernte Nebenposition
+					fam_note = "gelernte Nebenposition"
+				elif fam >= 0.72:
+					head += " ◊"   # naheliegende Aushilfsrolle
+					fam_note = "Aushilfsrolle"
+				else:
+					head += " ⚠"   # positionsfremd
+					fam_note = "positionsfremd"
+					warnings += 1
 			chip.text = "%s %s\n%s\nSt %d · %s · %d%%" % [head, Nations.code(p.nat), p.last_name, st, Fmt.form_icon(p.form), int(p.condition)]
-			chip.tooltip_text = "%s (%s, %s)\nSpielt %s: Stärke %d (eigene Position %s: %d)%s" % [
-				p.full_name(), p.pos, p.nat, chip.zone_pos, st, p.pos, p.strength,
+			chip.tooltip_text = "%s (%s, %s)\nSpielt %s (%s, %d %% Vertrautheit): Stärke %d – eigene Position %s: %d%s" % [
+				p.full_name(), p.pos, p.nat, chip.zone_pos, fam_note, int(fam * 100.0), st, p.pos, p.strength,
 				("\n" + ", ".join(p.traits)) if not p.traits.is_empty() else ""]
 		else:
 			chip.text = "%s\n– frei –" % chip.zone_pos
@@ -296,7 +305,7 @@ func _style_chip(chip: SlotChip) -> void:
 	style.set_corner_radius_all(8)
 	style.set_border_width_all(2)
 	style.border_color = base
-	if chip.pid > 0 and Game.get_player(chip.pid).group() != group:
+	if chip.pid > 0 and Game.get_player(chip.pid).position_familiarity(chip.zone_pos) < 0.72:
 		style.border_color = Color("#f59e0b")
 		style.bg_color = Color(0.2, 0.12, 0.02, 0.94)
 	if chip.pid > 0 and chip.pid == _selected_pid:

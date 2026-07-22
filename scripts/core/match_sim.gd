@@ -223,8 +223,8 @@ func substitute(is_home: bool, pid_out: int, pid_in: int) -> String:
 	var p_in: PlayerData = players[pid_in]
 	if not p_in.is_available():
 		return "%s ist nicht einsatzbereit (verletzt oder gesperrt)." % p_in.full_name()
-	if p_out.group() != p_in.group():
-		return "Wechsel nur innerhalb der Positionsgruppe möglich (%s gegen %s)." % [p_out.pos, p_in.pos]
+	# Jeder Spieler darf jede Position einnehmen (auf der Zone des Ausgewechselten
+	# bewertet, ggf. mit Vertrautheits-Abzug) – kein Positionsgruppen-Zwang mehr
 	lineup[lineup.find(pid_out)] = pid_in
 	off.append(pid_out)
 	_appeared[pid_in] = true
@@ -780,6 +780,11 @@ func _finalize() -> void:
 		p.last_rating = clampf(3.5 + _note_adj.get(pid, 0.0) + result_adj + day_adj + _rng.randf_range(-0.4, 0.4), 1.0, 6.0)
 		p.matches_season += 1
 		p.ratings_sum += p.last_rating
+	# Positionslernen: Wer auf einer Nebenposition ausläuft, lernt sie dazu.
+	for i in lineup_h.size():
+		players[lineup_h[i]].learn_position(slots_h[i] if i < slots_h.size() else "", 0.014)
+	for i in lineup_a.size():
+		players[lineup_a[i]].learn_position(slots_a[i] if i < slots_a.size() else "", 0.014)
 
 func _emit(kind: String, text: String) -> void:
 	events.append({"min": maxi(minute, 1), "kind": kind, "text": text})

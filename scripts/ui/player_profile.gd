@@ -56,7 +56,7 @@ func _init() -> void:
 	grid.add_theme_constant_override("h_separation", 18)
 	grid.add_theme_constant_override("v_separation", 6)
 	left.add_child(grid)
-	for entry in [["age", "Alter"], ["nat", "Nationalität"], ["strength", "Gesamtstärke"], ["talent", "Talent"], ["contract", "Vertrag"], ["salary", "Gehalt"],
+	for entry in [["age", "Alter"], ["nat", "Nationalität"], ["positions", "Positionen"], ["strength", "Gesamtstärke"], ["talent", "Talent"], ["contract", "Vertrag"], ["salary", "Gehalt"],
 		["value", "Marktwert"], ["traits", "Eigenschaften"], ["status", "Status"]]:
 		var key := Label.new()
 		key.text = entry[1] + ":"
@@ -160,6 +160,18 @@ func open_for(pid: int) -> void:
 
 	_info.age.text = "%d Jahre" % p.age
 	_info.nat.text = p.nat
+	# Hauptposition plus gelernte Nebenpositionen (mit Vertrautheit im Tooltip)
+	var learned := p.learned_positions()
+	if learned.is_empty():
+		_info.positions.text = "%s (%s)" % [p.pos, PlayerData.POSITION_NAMES[p.pos]]
+		_info.positions.tooltip_text = "Jede Position spielbar – auf fremden Rollen mit Abzug."
+	else:
+		_info.positions.text = "%s  ·  Neben: %s" % [p.pos, ", ".join(learned)]
+		var tips: Array = []
+		for sp in learned:
+			tips.append("%s: %d %% Vertrautheit" % [PlayerData.POSITION_NAMES[sp], int(p.position_familiarity(sp) * 100.0)])
+		_info.positions.tooltip_text = "\n".join(tips)
+		_info.positions.add_theme_color_override("font_color", UITheme.ACCENT)
 	if p.traits.is_empty():
 		_info.traits.text = "–"
 		_info.traits.tooltip_text = ""

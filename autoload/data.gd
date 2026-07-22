@@ -137,6 +137,13 @@ func _create_player_from_db(world: Dictionary, club: ClubData, entry: Dictionary
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash("%s|%s|traits" % [p.first_name, p.last_name])
 		p.traits = PlayerData.roll_traits(p.pos, rng)
+	if entry.has("secpos"):
+		for key in entry.secpos:
+			p.sec_positions[str(key)] = float(entry.secpos[key])
+	else:
+		var srng := RandomNumberGenerator.new()
+		srng.seed = hash("%s|%s|sec" % [p.first_name, p.last_name])
+		p.sec_positions = PlayerData.roll_secondary_positions(p.pos, srng)
 	p.club_id = club.id
 	world.players[p.id] = p
 	club.player_ids.append(p.id)
@@ -172,6 +179,7 @@ func _create_player(world: Dictionary, club: ClubData, pos: String, boost: int =
 	p.salary = p.expected_salary()
 	p.nat = Nations.roll(p.first_name, p.last_name)
 	p.traits = PlayerData.roll_traits(p.pos)
+	p.sec_positions = PlayerData.roll_secondary_positions(p.pos)
 	p.club_id = club.id
 	world.players[p.id] = p
 	club.player_ids.append(p.id)
@@ -200,6 +208,7 @@ func create_youth_player(world: Dictionary, club: ClubData, pos: String, bonus: 
 	p.salary = p.expected_salary()
 	p.nat = Nations.roll(p.first_name, p.last_name, true)
 	p.traits = PlayerData.roll_traits(p.pos)
+	p.sec_positions = PlayerData.roll_secondary_positions(p.pos)
 	p.club_id = club.id
 	world.players[p.id] = p
 	club.player_ids.append(p.id)

@@ -18,6 +18,25 @@ const GROUP_OF := {
 }
 const GROUPS := ["TW", "AB", "MF", "ST"]
 
+## Verwandte Positionen: naheliegende Nebenrollen (gleiche Seite oder Kette).
+## Dort hilft ein Spieler mit geringem Abzug aus und lernt schneller dazu.
+const RELATED_POSITIONS := {
+	"TW": [],
+	"LV": ["IV", "LM", "LA"],
+	"IV": ["LV", "RV", "DM"],
+	"RV": ["IV", "RM", "RA"],
+	"DM": ["ZM", "IV"],
+	"ZM": ["DM", "OM"],
+	"LM": ["LV", "LA", "ZM"],
+	"RM": ["RV", "RA", "ZM"],
+	"OM": ["ZM", "MS", "LA", "RA"],
+	"LA": ["LM", "MS", "OM"],
+	"RA": ["RM", "MS", "OM"],
+	"MS": ["OM", "LA", "RA"],
+}
+## Vertrautheit, ab der eine Nebenposition als "gelernt" gilt (Anzeige im Profil).
+const SEC_LEARNED := 0.85
+
 ## Spielerattribute (1–96) in drei Kategorien plus Torwart-Spezialwerte.
 ## Die Gesamtstärke wird daraus positionsabhängig berechnet, und JEDES Attribut
 ## hat eine konkrete Wirkung in der Match-Engine (siehe match_sim.gd).
@@ -152,6 +171,7 @@ var salary: int = 10000       # Euro pro Monat
 var club_id: int = -1
 var nat: String = "Deutschland"  # Nationalität (später Basis für Nationalmannschaften)
 var traits: Array = []           # 0–2 Eigenschaften aus TRAITS
+var sec_positions := {}          # gelernte Nebenpositionen: pos -> Vertrautheit (0..0.97)
 
 func has_trait(t: String) -> bool:
 	return traits.has(t)
@@ -257,15 +277,44 @@ static func make_attributes(p_pos: String, target: int) -> Dictionary:
 func combo(key_a: String, key_b: String, weight_a := 0.6) -> float:
 	return attr(key_a) * weight_a + attr(key_b) * (1.0 - weight_a)
 
-## Vertrautheit mit einer Position: volle Leistung nur auf der eigenen Position,
-## innerhalb der Positionsgruppe kleiner Abzug, gruppenfremd deutlicher Abzug
-## (fremde Laufwege, fehlendes Stellungsgefühl).
-func position_familiarity(p_pos: String) -> float:
+## Grund-Vertrautheit mit einer Position OHNE gelernte Nebenrollen:
+## eigene Position voll, verwandte Rollen fast, gruppenintern spürbar,
+## gruppenfremd deutlich, Torwart↔Feld nur als Notnagel.
+func base_familiarity(p_pos: String) -> float:
 	if p_pos == pos:
 		return 1.0
 	if p_pos == "TW" or pos == "TW":
-		return 0.5   # Feldspieler im Tor (oder Torwart im Feld) ist ein Notnagel
-	return 0.95 if GROUP_OF[p_pos] == group() else 0.75
+		return 0.45   # Feldspieler im Tor (oder Torwart im Feld) ist ein Notnagel
+	if p_pos in RELATED_POSITIONS.get(pos, []):
+		return 0.82   # naheliegende Nebenrolle (z. B. RM als RV oder RA)
+	if GROUP_OF[p_pos] == group():
+		return 0.75   # gleiche Positionsgruppe
+	return 0.6        # gruppenfremd, aber grundsätzlich möglich
+
+## Tatsächliche Vertrautheit: gelernte Nebenposition schlägt den Grundwert.
+func position_familiarity(p_pos: String) -> float:
+	if p_pos == pos:
+		return 1.0
+	if sec_positions.has(p_pos):
+		return maxf(float(sec_positions[p_pos]), base_familiarity(p_pos))
+	return base_familiarity(p_pos)
+
+## Nach einem Einsatz auf einer Nebenposition lernt der Spieler sie ein Stück
+## besser dazu (Vertrautheit steigt langsam Richtung Meisterschaft 0.97).
+func learn_position(p_pos: String, amount: float) -> void:
+	if not GROUP_OF.has(p_pos) or p_pos == pos or p_pos == "TW" or pos == "TW":
+		return
+	var current: float = maxf(float(sec_positions.get(p_pos, 0.0)), base_familiarity(p_pos))
+	sec_positions[p_pos] = clampf(current + amount, 0.0, 0.97)
+
+## Gelernte Nebenpositionen (über der "gelernt"-Schwelle), stärkste zuerst.
+func learned_positions() -> Array:
+	var out: Array = []
+	for p_pos in sec_positions:
+		if float(sec_positions[p_pos]) >= SEC_LEARNED:
+			out.append(p_pos)
+	out.sort_custom(func(a, b): return float(sec_positions[a]) > float(sec_positions[b]))
+	return out
 
 ## Stärke des Spielers auf einer (auch fremden) Position: bewertet die Attribute
 ## mit den Gewichten dieser Position, abzüglich der Positionsvertrautheit.
@@ -360,7 +409,7 @@ func to_dict() -> Dictionary:
 		"ms": matches_season, "rs": ratings_sum, "form": form, "sta": stamina, "cond": condition,
 		"inj": injury_matchdays, "sus": suspended_matchdays, "note": last_rating, "cy": contract_years, "sal": salary,
 		"club": club_id, "g": goals_season, "yc": yellow_cards, "rc": red_cards,
-		"nat": nat, "traits": traits,
+		"nat": nat, "traits": traits, "secpos": sec_positions,
 	}
 
 static func from_dict(d: Dictionary) -> PlayerData:
@@ -412,4 +461,33 @@ static func from_dict(d: Dictionary) -> PlayerData:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash("%s%s%d" % [p.first_name, p.last_name, p.id])
 		p.traits = roll_traits(p.pos, rng)
+	# Gelernte Nebenpositionen laden (alte Spielstände: deterministisch würfeln)
+	if d.has("secpos"):
+		for key in d.secpos:
+			p.sec_positions[str(key)] = float(d.secpos[key])
+	else:
+		var srng := RandomNumberGenerator.new()
+		srng.seed = hash("%s%s%d|sec" % [p.first_name, p.last_name, p.id])
+		p.sec_positions = roll_secondary_positions(p.pos, srng)
 	return p
+
+## Würfelt 0–2 vorab beherrschte Nebenpositionen (aus den verwandten Rollen),
+## damit die Welt vielseitige und reine Spezialisten mischt.
+static func roll_secondary_positions(p_pos: String, rng: RandomNumberGenerator = null) -> Dictionary:
+	var r := rng if rng != null else RandomNumberGenerator.new()
+	if rng == null:
+		r.randomize()
+	var related: Array = RELATED_POSITIONS.get(p_pos, [])
+	var result := {}
+	if related.is_empty():
+		return result   # Torhüter lernen keine Feldposition
+	var roll := r.randf()
+	var count := 0 if roll < 0.45 else (1 if roll < 0.82 else 2)
+	var pool := related.duplicate()
+	for i in count:
+		if pool.is_empty():
+			break
+		var pick: String = pool[r.randi_range(0, pool.size() - 1)]
+		pool.erase(pick)
+		result[pick] = r.randf_range(0.86, 0.94)
+	return result

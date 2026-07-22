@@ -1077,7 +1077,7 @@ func _build_overlay() -> void:
 	_overlay_bench_box.add_theme_constant_override("separation", 4)
 	mid_col.add_child(_overlay_bench_box)
 	var hint := Label.new()
-	hint.text = "Bank-Spieler auf einen\nFeldspieler ziehen (oder\nbeide anklicken) = Wechsel.\nNur gleiche Positionsgruppe,\nmax. 5 Wechsel."
+	hint.text = "Bank-Spieler auf einen\nFeldspieler ziehen (oder\nbeide anklicken) = Wechsel.\nJede Position möglich – auf\nfremder Position schwächer.\nMax. 5 Wechsel."
 	hint.add_theme_font_size_override("font_size", 11)
 	hint.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	mid_col.add_child(hint)

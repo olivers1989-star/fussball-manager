@@ -107,6 +107,9 @@ func _run_matches(a: ClubData, b: ClubData, twisted: bool) -> Dictionary:
 			p.condition = 100.0
 			p.injury_matchdays = 0
 			p.suspended_matchdays = 0
+			# Positionslernen zwischen den Experiment-Spielen zurücksetzen, damit
+			# nur der reine Positions-Abzug gemessen wird (nicht das Dazulernen)
+			p.sec_positions.clear()
 		a.lineup = a.best_eleven(Game.world.players)
 		b.lineup = b.best_eleven(Game.world.players)
 		if twisted:

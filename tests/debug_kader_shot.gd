@@ -13,9 +13,13 @@ func _ready() -> void:
 	hub.show_screen("Kader")
 	await get_tree().create_timer(1.0).timeout
 	get_viewport().get_texture().get_image().save_png("user://kader_shot.png")
-	# Spielerprofil des besten Stürmers öffnen
+	# Spielerprofil eines vielseitigen Spielers öffnen (mit Nebenpositionen)
 	var kader = hub._screens["Kader"]
 	var st: PlayerData = Game.my_club().players_by_pos(Game.world.players, "MS")[0]
+	for pid in Game.my_club().player_ids:
+		if not Game.world.players[pid].learned_positions().is_empty():
+			st = Game.world.players[pid]
+			break
 	kader._profile.open_for(st.id)
 	await get_tree().create_timer(1.0).timeout
 	get_viewport().get_texture().get_image().save_png("user://profil_shot.png")
