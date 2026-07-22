@@ -351,16 +351,18 @@ func _on_present() -> void:
 	var demand_bonus := int(_bonus_slider.value)
 	var demand_win := int(_win_slider.value)
 	var demand_exit := _exit_check.button_pressed
-	var salary_excess := float(demand_salary - _offer_salary) / _offer_salary
+	# Jede Position zählt nur, wenn sie ÜBER dem Angebot liegt – Unterforderungen
+	# dürfen Überforderungen nicht verrechnen
+	var salary_excess := maxf(0.0, float(demand_salary - _offer_salary) / _offer_salary)
 	var bonus_excess := maxf(0.0, float(demand_bonus - _offer_bonus) / (_offer_salary * 6.0))
 	var win_excess := maxf(0.0, float(demand_win - _offer_win) / (_offer_salary * 0.25))
 	# Die Ausstiegsklausel ist dem Vorstand ein Dorn im Auge
 	var exit_excess := 0.28 if demand_exit and not _offer_exit else 0.0
 	var aggressiveness := salary_excess + bonus_excess * 0.6 + win_excess * 0.4 + exit_excess
 
-	if aggressiveness <= 0.001:
-		# Forderung liegt auf oder unter dem Angebot – der Vorstand schlägt sofort ein
-		_apply_demands(demand_salary, demand_bonus, demand_win, demand_exit)
+	if aggressiveness <= 0.04:
+		# Einigkeit (oder nur Rundungs-Differenzen): der Vorstand schlägt sofort ein
+		_apply_demands(maxi(demand_salary, _offer_salary), maxi(demand_bonus, _offer_bonus), maxi(demand_win, _offer_win), demand_exit or _offer_exit)
 		_say(PLEASED_LINES.pick_random())
 		_refresh()
 		_reach_agreement()
@@ -381,11 +383,12 @@ func _on_present() -> void:
 		_refresh()
 		_reach_agreement()
 		return
-	elif randf() < 0.6:
+	elif aggressiveness <= 0.2 or randf() < 0.6:
 		# Gegenangebot: der Vorstand kommt dir einen Teil des Weges entgegen –
-		# die Ausstiegsklausel gesteht er nur manchmal zu
+		# die Ausstiegsklausel gesteht er nur manchmal zu.
+		# (Bei moderaten Forderungen gibt es IMMER ein Gegenangebot, kein schroffes Nein.)
 		var meet := randf_range(0.3, 0.6)
-		_offer_salary = int((_offer_salary + (demand_salary - _offer_salary) * meet) / 1000.0) * 1000
+		_offer_salary = int((_offer_salary + maxi(0, demand_salary - _offer_salary) * meet) / 1000.0) * 1000
 		_offer_bonus = int((_offer_bonus + maxi(0, demand_bonus - _offer_bonus) * meet) / 5000.0) * 5000
 		_offer_win = int((_offer_win + maxi(0, demand_win - _offer_win) * meet) / 500.0) * 500
 		var exit_text := ""
@@ -397,6 +400,13 @@ func _on_present() -> void:
 				exit_text = " – aber ohne Ausstiegsklausel"
 		_say(COUNTER_LINES.pick_random() % ("%s Gehalt, %s Prämie und %s je Sieg%s" % [
 			Fmt.money(_offer_salary), Fmt.money(_offer_bonus), Fmt.money(_offer_win), exit_text]))
+		# Schieberegler aufs Gegenangebot setzen: ein erneutes „Vortragen“
+		# ohne Änderung besiegelt dann die Einigung
+		_salary_slider.value = _offer_salary
+		_bonus_slider.value = _offer_bonus
+		_win_slider.value = _offer_win
+		if not _offer_exit:
+			_exit_check.set_pressed_no_signal(demand_exit)
 	else:
 		_say(DECLINE_LINES.pick_random())
 	if _patience <= 35.0 and not _broken_off:

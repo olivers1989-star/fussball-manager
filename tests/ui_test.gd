@@ -13,6 +13,34 @@ func _ready() -> void:
 		await get_tree().process_frame
 		print("Assistent OK: ", scene_path.get_file())
 
+	# Verhandlung: Forderung == Angebot muss SOFORT zur Einigung führen
+	Game.setup = {"club_id": 5, "mode": "vereinsauswahl", "name": "UI-Tester"}
+	var v: Control = load("res://scenes/verhandlung.tscn").instantiate()
+	add_child(v)
+	await get_tree().process_frame
+	v._salary_slider.value = v._offer_salary
+	v._bonus_slider.value = v._offer_bonus
+	v._win_slider.value = v._offer_win
+	v._exit_check.set_pressed_no_signal(false)
+	v._on_present()
+	assert(v._agreed, "Gleiche Forderung wie Angebot muss sofort Einigung sein")
+	# Und: Unterforderung in einer Position darf Überforderung nicht verrechnen
+	Game.setup = {"club_id": 6, "mode": "vereinsauswahl", "name": "UI-Tester"}
+	var v2: Control = load("res://scenes/verhandlung.tscn").instantiate()
+	add_child(v2)
+	await get_tree().process_frame
+	v2._bonus_slider.value = v2._bonus_slider.max_value
+	v2._win_slider.value = 0
+	# Überzogene Prämie darf trotz Siegprämie 0 nicht als "Einigkeit" durchgehen
+	var excess: float = maxf(0.0, float(int(v2._bonus_slider.value) - v2._offer_bonus) / (v2._offer_salary * 6.0)) * 0.6
+	assert(excess > 0.04, "Testaufbau: Prämienforderung muss überzogen sein")
+	v2._on_present()
+	assert(v2._patience < 100.0 or v2._agreed, "Überzogene Forderung muss Geduld kosten (keine Verrechnung mit Unterforderung)")
+	print("Verhandlungs-Einigung OK (Einigkeit sofort, keine Verrechnung)")
+	v.queue_free()
+	v2.queue_free()
+	await get_tree().process_frame
+
 	# Zentrale mit allen Tabs
 	Game.setup = {"name": "UI-Tester", "mode": "vereinsauswahl"}
 	Game.new_game(5)
