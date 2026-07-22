@@ -146,18 +146,30 @@ func players_by_group(all_players: Dictionary, p_group: String) -> Array:
 	result.sort_custom(func(a, b): return a.rating() > b.rating())
 	return result
 
+## Standard-Gewichtung der Auto-Aufstellung: Stärke führt, Frische und Form
+## zählen mit. Über die Aufstellungsmaske per Schieberegler einstellbar.
+const DEFAULT_PICK_WEIGHTS := {"str": 1.0, "fresh": 0.4, "form": 0.4}
+
+## Auswahl-Punktzahl eines Spielers nach gewählten Kriterien (0–100-Skala je Faktor).
+static func pick_score(p: PlayerData, weights: Dictionary) -> float:
+	var form_pts: float = clampf((p.form - 0.8) / 0.4 * 100.0, 0.0, 100.0)
+	return float(weights.get("str", 1.0)) * p.strength \
+		+ float(weights.get("fresh", 0.0)) * p.condition \
+		+ float(weights.get("form", 0.0)) * form_pts
+
 ## Stellt die beste fitte Elf für die Formations-Slots zusammen – SLOT-TREU:
 ## lineup[i] gehört zu FORMATIONS[formation][i]. Erst exakte Position,
-## dann gleiche Positionsgruppe, zuletzt beste Restspieler.
-func best_eleven(all_players: Dictionary, p_formation: String = "") -> Array:
+## dann gleiche Positionsgruppe, zuletzt beste Restspieler. weights steuert,
+## ob Stärke, Frische oder Form den Ausschlag geben.
+func best_eleven(all_players: Dictionary, p_formation: String = "", weights: Dictionary = DEFAULT_PICK_WEIGHTS) -> Array:
 	var slots: Array = FORMATIONS[p_formation if p_formation != "" else formation]
 	var available := players(all_players).filter(func(p): return p.is_available())
-	return _fill_slots(slots, available)
+	return _fill_slots(slots, available, weights)
 
 ## Ordnet einen Spieler-Pool den Slots zu (3 Durchgänge), Ergebnis slot-treu.
-func _fill_slots(slots: Array, pool: Array) -> Array:
+func _fill_slots(slots: Array, pool: Array, weights: Dictionary = DEFAULT_PICK_WEIGHTS) -> Array:
 	var sorted := pool.duplicate()
-	sorted.sort_custom(func(a, b): return a.effective_rating() > b.effective_rating())
+	sorted.sort_custom(func(a, b): return pick_score(a, weights) > pick_score(b, weights))
 	var eleven: Array = []
 	eleven.resize(slots.size())
 	eleven.fill(-1)
@@ -242,9 +254,9 @@ func match_lineup(all_players: Dictionary) -> Array:
 
 ## Beste Ersatzbank: Ersatztorwart zuerst (falls vorhanden), dann die stärksten
 ## fitten Restspieler bis BENCH_SIZE.
-func best_bench(all_players: Dictionary, the_lineup: Array) -> Array:
+func best_bench(all_players: Dictionary, the_lineup: Array, weights: Dictionary = DEFAULT_PICK_WEIGHTS) -> Array:
 	var rest := players(all_players).filter(func(p): return p.is_available() and not the_lineup.has(p.id))
-	rest.sort_custom(func(a, b): return a.effective_rating() > b.effective_rating())
+	rest.sort_custom(func(a, b): return pick_score(a, weights) > pick_score(b, weights))
 	var result: Array = []
 	for p in rest:
 		if p.group() == "TW":

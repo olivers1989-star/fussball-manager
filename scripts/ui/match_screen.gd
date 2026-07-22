@@ -802,7 +802,7 @@ func _build_team_panel(club: ClubData, is_home: bool) -> PanelContainer:
 	card.set_meta("tactic", tactic)
 	var header_row := HBoxContainer.new()
 	v.add_child(header_row)
-	for entry in [["Name", 0, true], ["Note", 44, false], ["Tore", 36, false]]:
+	for entry in [["Name", 0, true], ["Stä", 34, false], ["Fri", 40, false], ["Note", 40, false], ["Tore", 34, false]]:
 		var h := Label.new()
 		h.text = entry[0]
 		h.add_theme_font_size_override("font_size", 11)
@@ -840,15 +840,27 @@ func _refresh_team_panels() -> void:
 			name.add_theme_font_size_override("font_size", 13)
 			name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			name.clip_text = true
-			if int(_my_sim.cond[pid]) < 40:
-				name.add_theme_color_override("font_color", UITheme.DANGER)
-			elif int(_my_sim.cond[pid]) < 60:
-				name.add_theme_color_override("font_color", UITheme.WARN)
 			row.add_child(name)
+			# Stärke (stabil, auf der gespielten Position) – ändert sich NICHT im Spiel
+			var st := Label.new()
+			st.text = str(p.strength_at(slot))
+			st.custom_minimum_size = Vector2(34, 0)
+			st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			st.add_theme_font_size_override("font_size", 13)
+			row.add_child(st)
+			# Frische (sinkt im Spiel)
+			var fresh := Label.new()
+			var cond := int(_my_sim.cond[pid])
+			fresh.text = "%d%%" % cond
+			fresh.custom_minimum_size = Vector2(40, 0)
+			fresh.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			fresh.add_theme_font_size_override("font_size", 13)
+			fresh.add_theme_color_override("font_color", UITheme.DANGER if cond < 40 else (UITheme.WARN if cond < 60 else UITheme.TEXT_DIM))
+			row.add_child(fresh)
 			var note := Label.new()
 			var rating := _my_sim.live_rating(pid)
 			note.text = ("%.1f" % rating).replace(".", ",")
-			note.custom_minimum_size = Vector2(44, 0)
+			note.custom_minimum_size = Vector2(40, 0)
 			note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			note.add_theme_font_size_override("font_size", 13)
 			note.add_theme_color_override("font_color", UITheme.ACCENT if rating <= 2.5 else (UITheme.TEXT if rating <= 4.0 else UITheme.DANGER))
@@ -856,7 +868,7 @@ func _refresh_team_panels() -> void:
 			var goals := Label.new()
 			var g: int = _my_sim.match_goals.get(pid, 0)
 			goals.text = str(g) if g > 0 else "–"
-			goals.custom_minimum_size = Vector2(36, 0)
+			goals.custom_minimum_size = Vector2(34, 0)
 			goals.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			goals.add_theme_font_size_override("font_size", 13)
 			if g > 0:

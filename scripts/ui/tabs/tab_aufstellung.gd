@@ -19,6 +19,10 @@ var _message: Label
 var _summary: Label
 var _profile: PlayerProfileDialog
 var _selected_pid := -1
+var _crit_popup: PopupPanel
+var _crit_sliders := {}
+var _crit_values := {}
+var _pick_weights := {"str": 1.0, "fresh": 0.4, "form": 0.4}
 
 # ------------------------------------------------------------------ Spielfeld
 
@@ -65,13 +69,47 @@ class SlotChip extends Button:
 	var zone_pos := ""
 	var pid := -1
 	var tab: TabAufstellung
+	var pos_label: Label
+	var name_label: Label
+	var stat_label: Label
+	var fresh_bar: ColorRect
 
 	func _init(p_tab: TabAufstellung, index: int) -> void:
 		tab = p_tab
 		slot_index = index
-		custom_minimum_size = Vector2(142, 58)
-		clip_text = true
+		custom_minimum_size = Vector2(150, 62)
 		focus_mode = Control.FOCUS_NONE
+		# Klare Karten-Struktur: Positions-Chip oben, Name, Werte, Frische-Balken
+		var v := VBoxContainer.new()
+		v.set_anchors_preset(Control.PRESET_FULL_RECT)
+		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_theme_constant_override("separation", 1)
+		var pad := MarginContainer.new()
+		pad.set_anchors_preset(Control.PRESET_FULL_RECT)
+		pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		for s in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+			pad.add_theme_constant_override(s, 5)
+		add_child(pad)
+		pad.add_child(v)
+		pos_label = Label.new()
+		pos_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pos_label.add_theme_font_size_override("font_size", 11)
+		pos_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.7))
+		v.add_child(pos_label)
+		name_label = Label.new()
+		name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		name_label.clip_text = true
+		name_label.add_theme_font_size_override("font_size", 15)
+		v.add_child(name_label)
+		stat_label = Label.new()
+		stat_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		stat_label.add_theme_font_size_override("font_size", 12)
+		stat_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
+		v.add_child(stat_label)
+		fresh_bar = ColorRect.new()
+		fresh_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fresh_bar.custom_minimum_size = Vector2(0, 3)
+		v.add_child(fresh_bar)
 
 	func _get_drag_data(_at: Vector2) -> Variant:
 		if pid <= 0:
@@ -180,8 +218,13 @@ func _init() -> void:
 	auto_button.pressed.connect(_on_best_eleven)
 	UITheme.make_primary(auto_button)
 	top.add_child(auto_button)
+	var crit_button := Button.new()
+	crit_button.text = "⚙ Kriterien"
+	crit_button.pressed.connect(_open_criteria)
+	top.add_child(crit_button)
 	_summary = info_label()
 	top.add_child(_summary)
+	_build_criteria_popup()
 
 	var main := HBoxContainer.new()
 	main.add_theme_constant_override("separation", 12)
@@ -319,26 +362,35 @@ func _refresh_chips() -> void:
 			var p := Game.get_player(chip.pid)
 			var st := p.strength_at(chip.zone_pos)
 			total += st
-			var head := chip.zone_pos
+			var mark := ""
 			var fam := p.position_familiarity(chip.zone_pos)
 			var fam_note := "eigene Position"
 			if p.pos != chip.zone_pos:
 				if fam >= PlayerData.SEC_LEARNED:
-					head += " ✓"   # gelernte Nebenposition
+					mark = "  ✓"
 					fam_note = "gelernte Nebenposition"
 				elif fam >= 0.72:
-					head += " ◊"   # naheliegende Aushilfsrolle
+					mark = "  ◊"
 					fam_note = "Aushilfsrolle"
 				else:
-					head += " ⚠"   # positionsfremd
+					mark = "  ⚠"
 					fam_note = "positionsfremd"
 					warnings += 1
-			chip.text = "%s %s\n%s\nSt %d · %s · %d%%" % [head, Nations.code(p.nat), p.last_name, st, Fmt.form_icon(p.form), int(p.condition)]
+			chip.pos_label.text = chip.zone_pos + mark
+			chip.name_label.text = p.last_name
+			chip.stat_label.text = "St %d  ·  %d%%  %s" % [st, int(p.condition), Fmt.form_icon(p.form)]
+			chip.fresh_bar.color = _fresh_color(p.condition)
+			chip.fresh_bar.custom_minimum_size.x = 0.0
+			chip.fresh_bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			chip.fresh_bar.custom_minimum_size = Vector2(clampf(p.condition, 5.0, 100.0) * 1.36, 3)
 			chip.tooltip_text = "%s (%s, %s)\nSpielt %s (%s, %d %% Vertrautheit): Stärke %d – eigene Position %s: %d%s" % [
 				p.full_name(), p.pos, p.nat, chip.zone_pos, fam_note, int(fam * 100.0), st, p.pos, p.strength,
 				("\n" + ", ".join(p.traits)) if not p.traits.is_empty() else ""]
 		else:
-			chip.text = "%s\n– frei –" % chip.zone_pos
+			chip.pos_label.text = chip.zone_pos
+			chip.name_label.text = "– frei –"
+			chip.stat_label.text = ""
+			chip.fresh_bar.color = Color(0, 0, 0, 0)
 			chip.tooltip_text = ""
 		_style_chip(chip)
 	var avg := total / 11.0
@@ -365,7 +417,16 @@ func _style_chip(chip: SlotChip) -> void:
 	hover.bg_color = style.bg_color.lightened(0.08)
 	chip.add_theme_stylebox_override("hover", hover)
 	chip.add_theme_stylebox_override("pressed", style)
-	chip.add_theme_font_size_override("font_size", 12)
+
+## Frische-Farbe: grün (frisch) → gelb → rot (platt).
+func _fresh_color(cond: float) -> Color:
+	if cond >= 75.0:
+		return Color("#22c55e")
+	if cond >= 55.0:
+		return Color("#eab308")
+	if cond >= 35.0:
+		return Color("#f97316")
+	return Color("#ef4444")
 
 func _refresh_bench() -> void:
 	var c := Game.my_club()
@@ -808,7 +869,75 @@ func _on_formation_changed(index: int) -> void:
 func _on_best_eleven() -> void:
 	var c := Game.my_club()
 	c.lineup_spots = ClubData.FORMATION_SPOTS.get(c.formation, ClubData.FORMATION_SPOTS["4-4-2"]).duplicate()
-	c.lineup = c.best_eleven(Game.world.players)
-	c.bench = c.best_bench(Game.world.players, c.lineup)
-	_message.text = "Beste Elf und Bank wurden aufgestellt."
+	c.lineup = c.best_eleven(Game.world.players, "", _pick_weights)
+	c.bench = c.best_bench(Game.world.players, c.lineup, _pick_weights)
+	_message.text = "Beste Elf & Bank nach %s aufgestellt." % _crit_label()
 	refresh()
+
+# ------------------------------------------------------------------ Kriterien-Popup
+
+func _crit_label() -> String:
+	var best_key := "str"
+	for k in _pick_weights:
+		if _pick_weights[k] > _pick_weights[best_key]:
+			best_key = k
+	return {"str": "Stärke", "fresh": "Frische", "form": "Form"}[best_key]
+
+func _build_criteria_popup() -> void:
+	_crit_popup = PopupPanel.new()
+	add_child(_crit_popup)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	box.custom_minimum_size = Vector2(320, 0)
+	_crit_popup.add_child(box)
+	var title := Label.new()
+	title.text = "Auswahl-Kriterien für „Beste Elf & Bank“"
+	title.add_theme_font_size_override("font_size", 15)
+	title.add_theme_color_override("font_color", UITheme.ACCENT)
+	box.add_child(title)
+	var hint := Label.new()
+	hint.text = "Wie stark zählt jeder Faktor bei der Auto-Aufstellung?"
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	box.add_child(hint)
+	for entry in [["str", "Stärke"], ["fresh", "Frische"], ["form", "Form"]]:
+		var key: String = entry[0]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		box.add_child(row)
+		var lbl := Label.new()
+		lbl.text = entry[1]
+		lbl.custom_minimum_size = Vector2(80, 0)
+		row.add_child(lbl)
+		var slider := HSlider.new()
+		slider.min_value = 0
+		slider.max_value = 100
+		slider.step = 5
+		slider.value = _pick_weights[key] * 100.0
+		slider.custom_minimum_size = Vector2(160, 0)
+		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		slider.value_changed.connect(_on_crit_changed.bind(key))
+		row.add_child(slider)
+		_crit_sliders[key] = slider
+		var val := Label.new()
+		val.custom_minimum_size = Vector2(40, 0)
+		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		row.add_child(val)
+		_crit_values[key] = val
+	var apply := Button.new()
+	apply.text = "⭐ Jetzt aufstellen"
+	UITheme.make_primary(apply)
+	apply.pressed.connect(func(): _crit_popup.hide(); _on_best_eleven())
+	box.add_child(apply)
+	_update_crit_labels()
+
+func _open_criteria() -> void:
+	_crit_popup.popup_centered()
+
+func _on_crit_changed(value: float, key: String) -> void:
+	_pick_weights[key] = value / 100.0
+	_update_crit_labels()
+
+func _update_crit_labels() -> void:
+	for key in _crit_values:
+		_crit_values[key].text = "%d%%" % int(_pick_weights[key] * 100.0)
