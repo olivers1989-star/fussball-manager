@@ -12,6 +12,13 @@ const FORMATIONS := {
 	"4-5-1": ["TW", "LV", "IV", "IV", "RV", "LM", "DM", "ZM", "RM", "OM", "MS"],
 	"3-5-2": ["TW", "IV", "IV", "IV", "LM", "DM", "ZM", "RM", "OM", "MS", "MS"],
 	"5-3-2": ["TW", "LV", "IV", "IV", "IV", "RV", "DM", "ZM", "OM", "MS", "MS"],
+	"4-4-1-1": ["TW", "LV", "IV", "IV", "RV", "LM", "ZM", "ZM", "RM", "OM", "MS"],
+	"4-3-2-1": ["TW", "LV", "IV", "IV", "RV", "DM", "ZM", "ZM", "OM", "OM", "MS"],
+	"4-1-3-2": ["TW", "LV", "IV", "IV", "RV", "DM", "LM", "ZM", "RM", "MS", "MS"],
+	"4-1-4-1": ["TW", "LV", "IV", "IV", "RV", "DM", "LM", "ZM", "ZM", "RM", "MS"],
+	"5-4-1": ["TW", "LV", "IV", "IV", "IV", "RV", "LM", "ZM", "ZM", "RM", "MS"],
+	"3-4-3": ["TW", "IV", "IV", "IV", "LM", "ZM", "ZM", "RM", "LA", "MS", "RA"],
+	"4-2-4": ["TW", "LV", "IV", "IV", "RV", "ZM", "ZM", "LA", "MS", "MS", "RA"],
 }
 
 ## Feld-Koordinaten je Formations-Preset (x: 0=links..1=rechts, y: 0=eigenes Tor..1=vorne).
@@ -23,6 +30,13 @@ const FORMATION_SPOTS := {
 	"4-5-1": [Vector2(0.5, 0.05), Vector2(0.14, 0.3), Vector2(0.38, 0.24), Vector2(0.62, 0.24), Vector2(0.86, 0.3), Vector2(0.12, 0.6), Vector2(0.34, 0.46), Vector2(0.66, 0.52), Vector2(0.88, 0.6), Vector2(0.5, 0.68), Vector2(0.5, 0.86)],
 	"3-5-2": [Vector2(0.5, 0.05), Vector2(0.32, 0.24), Vector2(0.5, 0.2), Vector2(0.68, 0.24), Vector2(0.12, 0.58), Vector2(0.36, 0.46), Vector2(0.64, 0.55), Vector2(0.88, 0.58), Vector2(0.5, 0.68), Vector2(0.38, 0.86), Vector2(0.62, 0.86)],
 	"5-3-2": [Vector2(0.5, 0.05), Vector2(0.12, 0.34), Vector2(0.3, 0.24), Vector2(0.5, 0.2), Vector2(0.7, 0.24), Vector2(0.88, 0.34), Vector2(0.36, 0.46), Vector2(0.64, 0.55), Vector2(0.5, 0.68), Vector2(0.38, 0.86), Vector2(0.62, 0.86)],
+	"4-4-1-1": [Vector2(0.5, 0.05), Vector2(0.14, 0.3), Vector2(0.38, 0.24), Vector2(0.62, 0.24), Vector2(0.86, 0.3), Vector2(0.14, 0.56), Vector2(0.38, 0.54), Vector2(0.62, 0.54), Vector2(0.86, 0.56), Vector2(0.5, 0.7), Vector2(0.5, 0.88)],
+	"4-3-2-1": [Vector2(0.5, 0.05), Vector2(0.14, 0.3), Vector2(0.38, 0.24), Vector2(0.62, 0.24), Vector2(0.86, 0.3), Vector2(0.5, 0.44), Vector2(0.36, 0.56), Vector2(0.64, 0.56), Vector2(0.38, 0.7), Vector2(0.62, 0.7), Vector2(0.5, 0.88)],
+	"4-1-3-2": [Vector2(0.5, 0.05), Vector2(0.14, 0.3), Vector2(0.38, 0.24), Vector2(0.62, 0.24), Vector2(0.86, 0.3), Vector2(0.5, 0.44), Vector2(0.14, 0.58), Vector2(0.5, 0.58), Vector2(0.86, 0.58), Vector2(0.38, 0.85), Vector2(0.62, 0.85)],
+	"4-1-4-1": [Vector2(0.5, 0.05), Vector2(0.14, 0.3), Vector2(0.38, 0.24), Vector2(0.62, 0.24), Vector2(0.86, 0.3), Vector2(0.5, 0.44), Vector2(0.13, 0.57), Vector2(0.38, 0.56), Vector2(0.62, 0.56), Vector2(0.87, 0.57), Vector2(0.5, 0.86)],
+	"5-4-1": [Vector2(0.5, 0.05), Vector2(0.1, 0.33), Vector2(0.3, 0.24), Vector2(0.5, 0.2), Vector2(0.7, 0.24), Vector2(0.9, 0.33), Vector2(0.14, 0.56), Vector2(0.38, 0.54), Vector2(0.62, 0.54), Vector2(0.86, 0.56), Vector2(0.5, 0.86)],
+	"3-4-3": [Vector2(0.5, 0.05), Vector2(0.32, 0.24), Vector2(0.5, 0.2), Vector2(0.68, 0.24), Vector2(0.12, 0.55), Vector2(0.38, 0.52), Vector2(0.62, 0.52), Vector2(0.88, 0.55), Vector2(0.16, 0.82), Vector2(0.5, 0.88), Vector2(0.84, 0.82)],
+	"4-2-4": [Vector2(0.5, 0.05), Vector2(0.14, 0.3), Vector2(0.38, 0.24), Vector2(0.62, 0.24), Vector2(0.86, 0.3), Vector2(0.38, 0.54), Vector2(0.62, 0.54), Vector2(0.15, 0.83), Vector2(0.4, 0.88), Vector2(0.6, 0.88), Vector2(0.85, 0.83)],
 }
 
 ## Zonen-Erkennung: übersetzt einen Punkt auf dem Feld in eine Position.
@@ -165,8 +179,7 @@ func _fill_slots(slots: Array, pool: Array) -> Array:
 ## wird mit ihrer besten Elf bewertet (Stärke der Spieler auf ihren Slots).
 ## Ein kleiner Zufallsbonus sorgt für Vielfalt zwischen ähnlich guten Systemen.
 func pick_best_formation(all_players: Dictionary) -> String:
-	var best_name: String = formation
-	var best_score := -1.0
+	var scored: Array = []
 	for name in FORMATIONS:
 		var eleven := best_eleven(all_players, name)
 		if eleven.size() < 11:
@@ -174,12 +187,25 @@ func pick_best_formation(all_players: Dictionary) -> String:
 		var slots: Array = FORMATIONS[name]
 		var score := 0.0
 		for i in 11:
-			score += all_players[eleven[i]].strength_at(slots[i])
-		score += randf_range(0.0, 6.0)
-		if score > best_score:
-			best_score = score
-			best_name = name
-	return best_name
+			var p: PlayerData = all_players[eleven[i]]
+			score += p.strength_at(slots[i])
+			# Trainer besetzen Positionen bevorzugt mit gelernten Spielern –
+			# das hält Flügelsysteme im Rennen (LM/RM/LA/RA sind rar im Kader)
+			if p.pos == slots[i]:
+				score += 2.5
+		scored.append([name, score])
+	if scored.is_empty():
+		return formation
+	scored.sort_custom(func(a, b): return a[1] > b[1])
+	# Nicht stur das Maximum: Trainer haben Vorlieben – gewichtete Wahl unter den Top 4
+	var top := scored.slice(0, mini(4, scored.size()))
+	var weights := [0.42, 0.28, 0.18, 0.12]
+	var roll := randf()
+	for i in top.size():
+		roll -= weights[i]
+		if roll <= 0.0:
+			return top[i][0]
+	return top[0][0]
 
 ## Sortiert eine vorhandene Startelf slot-treu um (z. B. nach dem Laden alter
 ## Spielstände oder einem Preset-Wechsel mit denselben Spielern). Nutzt die
