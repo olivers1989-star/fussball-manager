@@ -17,6 +17,7 @@ var _play_button: Button
 var _budget_label: Label
 var _next_match_label: Label
 var _toast: Label
+var _save_browser: SaveBrowser
 var _menu_dialog: ConfirmationDialog
 var _season_dialog: AcceptDialog
 var _offers_dialog: ConfirmationDialog
@@ -116,10 +117,19 @@ func _build_ui() -> void:
 	_toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side.add_child(_toast)
 
+	var save_row := HBoxContainer.new()
+	save_row.add_theme_constant_override("separation", 6)
+	side.add_child(save_row)
 	var save_button := Button.new()
-	save_button.text = "Speichern"
+	save_button.text = "💾 Speichern"
+	save_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	save_button.pressed.connect(_on_save)
-	side.add_child(save_button)
+	save_row.add_child(save_button)
+	var quick_button := Button.new()
+	quick_button.text = "⚡"
+	quick_button.tooltip_text = "Schnellspeichern (überschreibt den automatischen Spielstand)"
+	quick_button.pressed.connect(_quick_save)
+	save_row.add_child(quick_button)
 	var menu_button := Button.new()
 	menu_button.text = "Hauptmenü"
 	menu_button.pressed.connect(func(): _menu_dialog.popup_centered())
@@ -231,6 +241,10 @@ func _build_ui() -> void:
 
 	_build_sim_overlay()
 
+	_save_browser = SaveBrowser.new()
+	_save_browser.saved.connect(func(save_name): _show_toast("Gespeichert: %s ✓" % save_name))
+	add_child(_save_browser)
+
 func _stat_box(caption: String, kind: String) -> VBoxContainer:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 0)
@@ -311,8 +325,15 @@ func update_topbar() -> void:
 # ------------------------------------------------------------------ Aktionen
 
 func _on_save() -> void:
+	_save_browser.open_browser("save")
+
+## Schnellspeichern (überschreibt den automatischen Slot) – über die Zentrale.
+func _quick_save() -> void:
 	var save_name := Game.save_game()
-	_toast.text = "Gespeichert: %s ✓" % save_name if not save_name.is_empty() else "Speichern fehlgeschlagen!"
+	_show_toast("Gespeichert: %s ✓" % save_name if not save_name.is_empty() else "Speichern fehlgeschlagen!")
+
+func _show_toast(text: String) -> void:
+	_toast.text = text
 	get_tree().create_timer(4.0).timeout.connect(func():
 		if is_instance_valid(_toast):
 			_toast.text = "")

@@ -1,9 +1,7 @@
 extends Control
 ## Hauptmenü: Neues Spiel, Spiel laden, Beenden.
 
-var _load_dialog: AcceptDialog
-var _save_list: ItemList
-var _saves: Array = []
+var _browser: SaveBrowser
 
 func _ready() -> void:
 	# Dezente "Rasen"-Fläche im Hintergrund
@@ -55,15 +53,9 @@ func _ready() -> void:
 	box.add_child(_menu_button("Spiel laden", _on_load))
 	box.add_child(_menu_button("Beenden", _on_quit))
 
-	_load_dialog = AcceptDialog.new()
-	_load_dialog.title = "Spiel laden"
-	_load_dialog.ok_button_text = "Laden"
-	_load_dialog.min_size = Vector2i(600, 400)
-	_save_list = ItemList.new()
-	_save_list.custom_minimum_size = Vector2(560, 320)
-	_load_dialog.add_child(_save_list)
-	_load_dialog.confirmed.connect(_on_load_confirmed)
-	add_child(_load_dialog)
+	_browser = SaveBrowser.new()
+	_browser.loaded.connect(func(): get_tree().change_scene_to_file("res://scenes/hub.tscn"))
+	add_child(_browser)
 
 func _menu_button(text: String, handler: Callable) -> Button:
 	var b := Button.new()
@@ -83,26 +75,7 @@ func _on_new_game() -> void:
 	get_tree().change_scene_to_file("res://scenes/trainer_anlegen.tscn")
 
 func _on_load() -> void:
-	_saves = Game.list_saves()
-	_save_list.clear()
-	if _saves.is_empty():
-		_save_list.add_item("Keine Spielstände vorhanden.")
-		_save_list.set_item_disabled(0, true)
-	else:
-		for s in _saves:
-			var m: Dictionary = s.meta
-			var mode: String = "Echte Karriere" if m.get("game_mode", "") == "angebote" else "Vereinsauswahl"
-			_save_list.add_item("%s – %s, Saison %d, Spieltag %d · %s  (%s)" % [
-				m.manager, m.club, int(m.season_year), int(m.matchday) + 1, mode, m.saved_at])
-		_save_list.select(0)
-	_load_dialog.popup_centered()
-
-func _on_load_confirmed() -> void:
-	if _saves.is_empty() or _save_list.get_selected_items().is_empty():
-		return
-	var idx: int = _save_list.get_selected_items()[0]
-	if Game.load_game(_saves[idx].path):
-		get_tree().change_scene_to_file("res://scenes/hub.tscn")
+	_browser.open_browser("load")
 
 func _on_quit() -> void:
 	get_tree().quit()

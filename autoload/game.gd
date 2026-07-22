@@ -842,13 +842,29 @@ func sell_player(pid: int) -> String:
 
 # ------------------------------------------------------------------ Speichern / Laden
 
-func save_game() -> String:
+## Speichert den Spielstand. Ohne Namen wird automatisch benannt
+## (Verein_Saison_Spieltag); mit Namen wird genau dieser Slot geschrieben.
+func save_game(custom_name: String = "") -> String:
 	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
-	var save_name := "%s_%d_ST%02d" % [my_club().short_name, world.season_year, matchday()]
+	var save_name := custom_name.strip_edges() if custom_name.strip_edges() != "" \
+		else "%s_%d_ST%02d" % [my_club().short_name, world.season_year, matchday()]
+	save_name = sanitize_save_name(save_name)
 	var path := "%s/%s.json" % [SAVE_DIR, save_name]
+	var table_row := {}
+	for row in my_league().table():
+		if int(row.club_id) == my_club_id:
+			table_row = row
+			break
 	var data := {
 		"meta": {
 			"manager": manager_name,
+			"club_short": my_club().short_name,
+			"club_color": my_club().color,
+			"league": my_league().name,
+			"position": my_league().position_of(my_club_id),
+			"points": int(table_row.get("points", 0)),
+			"budget": my_club().budget,
+			"season_goal_text": season_goal.get("text", ""),
 			"manager_birthday": manager_birthday,
 			"manager_origin": manager_origin,
 			"manager_nat": manager_nat,
@@ -880,6 +896,20 @@ func save_game() -> String:
 		return ""
 	f.store_string(JSON.stringify(data))
 	return save_name
+
+## Entfernt für Dateinamen unzulässige Zeichen aus einem Spielstandsnamen.
+const SAVE_NAME_ALLOWED := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_äöüÄÖÜß."
+
+static func sanitize_save_name(name: String) -> String:
+	var out := ""
+	for c in name:
+		out += c if SAVE_NAME_ALLOWED.contains(c) else "_"
+	out = out.strip_edges()
+	return out.substr(0, 48) if out != "" else "Spielstand"
+
+## Löscht einen Spielstand. true bei Erfolg.
+func delete_save(path: String) -> bool:
+	return DirAccess.remove_absolute(path) == OK
 
 func list_saves() -> Array:
 	var result: Array = []
