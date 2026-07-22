@@ -1,6 +1,6 @@
 extends Control
-## Spielstart, Schritt 1/3: Trainerprofil anlegen
-## (Name, Geburtsdatum, Herkunftsort, Nationalität, Fähigkeiten-Verteilung).
+## Spielstart, Schritt 1/3: Trainerprofil anlegen – modernes Karten-Layout mit
+## Schritt-Anzeige, Flaggen bei der Nationalität und Fähigkeiten mit Punkte-Skala.
 
 const NATIONS := [
 	"Deutschland", "Österreich", "Schweiz", "Niederlande", "England",
@@ -17,6 +17,7 @@ const SKILL_HINTS := {
 	"verhandlung": "Bessere Kauf- und Verkaufspreise",
 	"jugend": "Stärkerer Nachwuchs zum Saisonwechsel",
 }
+const SKILL_ICONS := {"taktik": "♟", "training": "🏃", "motivation": "🔥", "verhandlung": "💬", "jugend": "🌱"}
 
 var _first_edit: LineEdit
 var _last_edit: LineEdit
@@ -26,7 +27,7 @@ var _year_spin: SpinBox
 var _origin_edit: LineEdit
 var _nat_select: OptionButton
 var _skill_values := {}
-var _skill_labels := {}
+var _skill_dots := {}
 var _points_label: Label
 var _profile_select: OptionButton
 var _profile_status: Label
@@ -40,73 +41,58 @@ func _ready() -> void:
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 
-	var card := UITheme.card()
-	center.add_child(card)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 16)
-	card.add_child(box)
+	box.add_theme_constant_override("separation", 14)
+	center.add_child(box)
 
-	var step := Label.new()
-	step.text = "Schritt 1 von 3"
-	step.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	step.add_theme_color_override("font_color", Color("#64748b"))
-	box.add_child(step)
-
-	var title := Label.new()
-	title.text = "Trainerprofil anlegen"
-	title.add_theme_font_size_override("font_size", 42)
-	title.add_theme_color_override("font_color", Color("#4ade80"))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(title)
+	box.add_child(WizardUI.step_header(1, "Trainerprofil anlegen", "Wer steht bei dir an der Seitenlinie?"))
 
 	var columns := HBoxContainer.new()
-	columns.add_theme_constant_override("separation", 60)
+	columns.add_theme_constant_override("separation", 18)
 	box.add_child(columns)
 
-	# --- Linke Spalte: persönliche Daten
-	var left := VBoxContainer.new()
-	left.add_theme_constant_override("separation", 12)
-	columns.add_child(left)
-	left.add_child(_section_label("Persönliche Daten"))
+	# --- Karte: Persönliche Daten
+	var left_card := WizardUI.section_card("👤 Persönliche Daten")
+	columns.add_child(left_card)
+	var left: VBoxContainer = left_card.get_meta("content")
 
-	# Gespeicherte Profile
 	var profile_row := HBoxContainer.new()
 	profile_row.add_theme_constant_override("separation", 8)
 	left.add_child(profile_row)
 	_profile_select = OptionButton.new()
-	_profile_select.custom_minimum_size = Vector2(230, 0)
+	_profile_select.custom_minimum_size = Vector2(220, 0)
 	_profile_select.item_selected.connect(_on_profile_selected)
 	profile_row.add_child(_profile_select)
 	var save_profile_button := Button.new()
-	save_profile_button.text = "Profil speichern"
+	save_profile_button.text = "💾 Speichern"
 	save_profile_button.pressed.connect(_on_save_profile)
 	profile_row.add_child(save_profile_button)
 	_profile_status = Label.new()
-	_profile_status.add_theme_color_override("font_color", Color("#64748b"))
+	_profile_status.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	profile_row.add_child(_profile_status)
 	_reload_profiles()
 
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 16)
-	grid.add_theme_constant_override("v_separation", 12)
+	grid.add_theme_constant_override("v_separation", 11)
 	left.add_child(grid)
 
-	grid.add_child(_form_label("Vorname:"))
+	grid.add_child(WizardUI.form_label("Vorname"))
 	_first_edit = LineEdit.new()
 	_first_edit.placeholder_text = "Vorname"
-	_first_edit.custom_minimum_size = Vector2(300, 0)
-	_first_edit.add_theme_font_size_override("font_size", 19)
+	_first_edit.custom_minimum_size = Vector2(280, 0)
+	_first_edit.add_theme_font_size_override("font_size", 17)
 	grid.add_child(_first_edit)
 
-	grid.add_child(_form_label("Nachname:"))
+	grid.add_child(WizardUI.form_label("Nachname"))
 	_last_edit = LineEdit.new()
 	_last_edit.placeholder_text = "Nachname"
-	_last_edit.custom_minimum_size = Vector2(300, 0)
-	_last_edit.add_theme_font_size_override("font_size", 19)
+	_last_edit.custom_minimum_size = Vector2(280, 0)
+	_last_edit.add_theme_font_size_override("font_size", 17)
 	grid.add_child(_last_edit)
 
-	grid.add_child(_form_label("Geburtsdatum:"))
+	grid.add_child(WizardUI.form_label("Geburtsdatum"))
 	var birth_row := HBoxContainer.new()
 	birth_row.add_theme_constant_override("separation", 6)
 	_day_spin = SpinBox.new()
@@ -125,92 +111,88 @@ func _ready() -> void:
 	birth_row.add_child(_year_spin)
 	grid.add_child(birth_row)
 
-	grid.add_child(_form_label("Herkunftsort:"))
+	grid.add_child(WizardUI.form_label("Herkunftsort"))
 	_origin_edit = LineEdit.new()
 	_origin_edit.placeholder_text = "z. B. Dortmund"
-	_origin_edit.custom_minimum_size = Vector2(300, 0)
-	_origin_edit.add_theme_font_size_override("font_size", 19)
+	_origin_edit.custom_minimum_size = Vector2(280, 0)
+	_origin_edit.add_theme_font_size_override("font_size", 17)
 	grid.add_child(_origin_edit)
 
-	grid.add_child(_form_label("Nationalität:"))
+	grid.add_child(WizardUI.form_label("Nationalität"))
 	_nat_select = OptionButton.new()
 	for nation in NATIONS:
-		_nat_select.add_item(nation)
+		_nat_select.add_icon_item(Flags.texture(nation), nation)
 	_nat_select.custom_minimum_size = Vector2(220, 0)
 	grid.add_child(_nat_select)
 
-	# --- Rechte Spalte: Fähigkeiten
-	var right := VBoxContainer.new()
-	right.add_theme_constant_override("separation", 10)
-	columns.add_child(right)
-	right.add_child(_section_label("Fähigkeiten"))
+	# --- Karte: Fähigkeiten
+	var right_card := WizardUI.section_card("⚡ Fähigkeiten")
+	columns.add_child(right_card)
+	var right: VBoxContainer = right_card.get_meta("content")
+
 	_points_label = Label.new()
-	_points_label.add_theme_font_size_override("font_size", 18)
+	_points_label.add_theme_font_size_override("font_size", 15)
+	_points_label.add_theme_color_override("font_color", UITheme.WARN)
 	right.add_child(_points_label)
 
 	for key in Game.SKILLS:
+		var row_box := VBoxContainer.new()
+		row_box.add_theme_constant_override("separation", 1)
+		right.add_child(row_box)
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
-		right.add_child(row)
+		row_box.add_child(row)
 		var skill_name := Label.new()
-		skill_name.text = Game.SKILLS[key]
-		skill_name.custom_minimum_size = Vector2(130, 0)
-		skill_name.add_theme_font_size_override("font_size", 19)
+		skill_name.text = "%s  %s" % [SKILL_ICONS.get(key, ""), Game.SKILLS[key]]
+		skill_name.custom_minimum_size = Vector2(160, 0)
+		skill_name.add_theme_font_size_override("font_size", 17)
 		row.add_child(skill_name)
 		var minus := Button.new()
 		minus.text = "–"
-		minus.custom_minimum_size = Vector2(36, 36)
+		minus.custom_minimum_size = Vector2(34, 34)
+		minus.focus_mode = Control.FOCUS_NONE
 		minus.pressed.connect(_on_skill_change.bind(key, -1))
 		row.add_child(minus)
-		var value := Label.new()
-		value.custom_minimum_size = Vector2(70, 0)
-		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		value.add_theme_font_size_override("font_size", 19)
-		row.add_child(value)
-		_skill_labels[key] = value
+		var dots := Label.new()
+		dots.custom_minimum_size = Vector2(150, 0)
+		dots.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		dots.add_theme_font_size_override("font_size", 16)
+		dots.add_theme_color_override("font_color", UITheme.ACCENT)
+		row.add_child(dots)
+		_skill_dots[key] = dots
 		var plus := Button.new()
 		plus.text = "+"
-		plus.custom_minimum_size = Vector2(36, 36)
+		plus.custom_minimum_size = Vector2(34, 34)
+		plus.focus_mode = Control.FOCUS_NONE
 		plus.pressed.connect(_on_skill_change.bind(key, 1))
 		row.add_child(plus)
 		var hint := Label.new()
 		hint.text = SKILL_HINTS[key]
-		hint.add_theme_color_override("font_color", Color("#64748b"))
-		row.add_child(hint)
+		hint.add_theme_font_size_override("font_size", 12)
+		hint.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		row_box.add_child(hint)
 
-	# --- Buttons
+	# --- Navigation
 	var buttons := HBoxContainer.new()
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
 	buttons.add_theme_constant_override("separation", 14)
 	box.add_child(buttons)
 	var back := Button.new()
 	back.text = "← Hauptmenü"
-	back.custom_minimum_size = Vector2(180, 48)
-	back.add_theme_font_size_override("font_size", 20)
+	back.custom_minimum_size = Vector2(180, 46)
+	back.add_theme_font_size_override("font_size", 18)
 	back.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/main_menu.tscn"))
 	buttons.add_child(back)
 	var next := Button.new()
-	next.text = "Weiter: Spielmodus →"
-	next.custom_minimum_size = Vector2(240, 48)
-	next.add_theme_font_size_override("font_size", 20)
+	next.text = "Weiter: Spielmodus  →"
+	next.custom_minimum_size = Vector2(260, 46)
+	next.add_theme_font_size_override("font_size", 18)
+	UITheme.make_primary(next)
 	next.pressed.connect(_on_next)
 	buttons.add_child(next)
 
 	_restore_setup()
 	_update_skill_display()
-
-func _section_label(text: String) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", 24)
-	l.add_theme_color_override("font_color", Color("#4ade80"))
-	return l
-
-func _form_label(text: String) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", 19)
-	return l
 
 func _points_spent() -> int:
 	var spent := 0
@@ -228,9 +210,10 @@ func _on_skill_change(key: String, delta: int) -> void:
 	_update_skill_display()
 
 func _update_skill_display() -> void:
-	for key in _skill_labels:
-		_skill_labels[key].text = "%d / %d" % [_skill_values[key], Game.SKILL_MAX]
-	_points_label.text = "Verfügbare Punkte: %d von %d" % [Game.SKILL_POOL - _points_spent(), Game.SKILL_POOL]
+	for key in _skill_dots:
+		_skill_dots[key].text = "●".repeat(_skill_values[key]) + "○".repeat(Game.SKILL_MAX - _skill_values[key])
+	var free := Game.SKILL_POOL - _points_spent()
+	_points_label.text = "Noch %d von %d Punkten zu verteilen" % [free, Game.SKILL_POOL] if free > 0 else "Alle Punkte verteilt ✓"
 
 func _restore_setup() -> void:
 	if not Game.setup.has("name"):

@@ -57,6 +57,7 @@ var coach_salary := 20000      # Dein Trainergehalt pro Monat (in der Verhandlun
 var coach_contract_years := 2
 var goal_bonus := 0            # Ausgehandelte Erfolgsprämie bei Erreichen des Saisonziels
 var win_bonus := 0             # Ausgehandelte Siegprämie pro gewonnenem Spiel
+var coach_exit_clause := false # Ausstiegsklausel: erlaubt den ablösefreien Wechsel trotz Vertrag
 var coach_money := 0           # Dein persönliches Trainerkonto (Gehalt + Prämien)
 var season_goal := {}          # Saisonziel des Vorstands: {text, position}
 var my_club_id := -1
@@ -89,17 +90,13 @@ func new_game(p_club_id: int) -> void:
 	coach_contract_years = int(setup.get("coach_years", 2))
 	goal_bonus = int(setup.get("goal_bonus", 0))
 	win_bonus = int(setup.get("win_bonus", 0))
+	coach_exit_clause = bool(setup.get("exit_clause", false))
 	coach_money = 0
 	season_goal = setup.get("season_goal", _board_goal_for(my_club()))
 	transactions.clear()
 	news.clear()
 	initialized = true
 	my_club().budget = int(my_club().budget * DIFFICULTY_FACTORS.get(difficulty, 1.0))
-	# Ausgehandelte Transferbudget-Zusage des Vorstands
-	var pledge := int(setup.get("transfer_pledge", 0))
-	if pledge > 0:
-		my_club().budget += pledge
-		log_transaction("Transferbudget-Zusage des Vorstands", pledge)
 
 # ------------------------------------------------------------------ Trainerprofile (wiederverwendbar)
 
@@ -753,6 +750,10 @@ func season_offers() -> Array:
 	return candidates.slice(0, 2)
 
 func switch_club(cid: int) -> void:
+	# Vertragsbruch ohne Ausstiegsklausel kostet Reputation (der alte Vorstand tobt)
+	if not coach_exit_clause and coach_contract_years > 0:
+		reputation -= 3.0
+		_add_news("contract", "Vertragsbruch: Dein Abgang von %s ohne Ausstiegsklausel schadet deinem Ruf." % my_club().name)
 	my_club_id = cid
 	reputation = maxf(reputation, float(my_club().base_strength))
 	my_club().lineup = my_club().best_eleven(world.players)
@@ -830,6 +831,7 @@ func save_game() -> String:
 			"coach_years": coach_contract_years,
 			"goal_bonus": goal_bonus,
 			"win_bonus": win_bonus,
+			"exit_clause": coach_exit_clause,
 			"coach_money": coach_money,
 			"season_goal": season_goal,
 			"my_club_id": my_club_id,
@@ -893,6 +895,7 @@ func load_game(path: String) -> bool:
 	coach_contract_years = int(data.meta.get("coach_years", 2))
 	goal_bonus = int(data.meta.get("goal_bonus", 0))
 	win_bonus = int(data.meta.get("win_bonus", 0))
+	coach_exit_clause = bool(data.meta.get("exit_clause", false))
 	coach_money = int(data.meta.get("coach_money", 0))
 	season_goal = data.meta.get("season_goal", {})
 	my_club_id = int(data.meta.my_club_id)
