@@ -37,17 +37,24 @@ static func build_fixtures(club_ids: Array) -> Array:
 static func _fixture(p_round: int, p_home: int, p_away: int) -> Dictionary:
 	return {"round": p_round, "home": p_home, "away": p_away, "played": false, "hg": 0, "ag": 0}
 
-## Saisonbeginn: 10. Juli – rund vier Wochen Sommervorbereitung vor dem 1. Spieltag.
+## Saisonbeginn: 1. Juli. Eine Spielzeit läuft kalendarisch vom 1. Juli bis zum
+## 30. Juni des Folgejahres – der Saisonwechsel liegt also im Sommer.
 static func season_start(year: int) -> int:
 	return int(Time.get_unix_time_from_datetime_dict({
-		"year": year, "month": 7, "day": 10, "hour": 12, "minute": 0, "second": 0}))
+		"year": year, "month": 7, "day": 1, "hour": 12, "minute": 0, "second": 0}))
+
+## Letzter Tag der Spielzeit: 30. Juni des Folgejahres.
+static func season_end(year: int) -> int:
+	return season_start(year + 1) - 86400
 
 ## Alle 34 Spieltagstermine einer Saison: wöchentlich samstags, mit WINTERPAUSE.
-## Hinrunde (17 Spieltage) ab Anfang/Mitte August, Rückrunde ab dem ersten Februar-Samstag.
+## Hinrunde ab dem ersten August-Samstag – davor liegen rund fünf Wochen
+## Sommervorbereitung. Rückrunde ab dem ersten Februar-Samstag, damit der letzte
+## Spieltag Ende Mai fällt und der Juni als Sommerpause frei bleibt.
 static func matchday_dates(year: int) -> Array:
 	var dates: Array = []
-	# Hinrunde: mindestens vier Vorbereitungswochen nach Saisonstart
-	var t := season_start(year) + 27 * 86400
+	var t := int(Time.get_unix_time_from_datetime_dict({
+		"year": year, "month": 8, "day": 1, "hour": 12, "minute": 0, "second": 0}))
 	while Time.get_datetime_dict_from_unix_time(t).weekday != Time.WEEKDAY_SATURDAY:
 		t += 86400
 	for i in 17:

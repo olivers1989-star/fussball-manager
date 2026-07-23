@@ -58,7 +58,8 @@ func refresh() -> void:
 	# Spielvorbereitung: nur Hinweis – gewählt wird im Popup am Vortag des Spiels
 	var f := Game.next_fixture(Game.my_club_id)
 	if f.is_empty():
-		_opponent_label.text = "Kein Spiel mehr in dieser Saison."
+		_opponent_label.text = "Sommerpause – kein Pflichtspiel mehr in dieser Saison." if not Game.season_rollover_due() \
+			else "Die Saison wartet auf ihren Abschluss."
 	else:
 		var home := int(f.home) == Game.my_club_id
 		var opponent := Game.club(int(f.away) if home else int(f.home))

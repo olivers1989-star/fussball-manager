@@ -139,8 +139,13 @@ func _refresh_match_card(c: ClubData) -> void:
 	var f := Game.next_fixture(c.id)
 	if f.is_empty():
 		var done := Label.new()
-		done.text = "Die Saison ist beendet – schließe sie über den Button oben rechts ab."
+		var left := Game.days_until_season_end()
+		if Game.season_rollover_due():
+			done.text = "Der 1. Juli ist da – schließe die Saison über den Button oben rechts ab."
+		else:
+			done.text = "Alle Spieltage sind gespielt. Noch %d Tage Sommerpause bis zum Saisonabschluss am 1. Juli." % left
 		done.add_theme_font_size_override("font_size", 18)
+		done.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_match_inner.add_child(done)
 		return
 	var home_club := Game.club(int(f.home))

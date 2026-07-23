@@ -28,7 +28,6 @@ var _talk_close: Button
 var _talk_decision := {}
 var _friendly_dialog: AcceptDialog
 var _menu_dialog: ConfirmationDialog
-var _season_dialog: AcceptDialog
 var _offers_dialog: ConfirmationDialog
 var _offers_list: ItemList
 var _pending_offers: Array = []
@@ -60,12 +59,18 @@ func _ready() -> void:
 	if not Game.initialized:
 		get_tree().change_scene_to_file.call_deferred("res://scenes/main_menu.tscn")
 		return
+	# Der 1. Juli gehört dem Saisonabschluss – der hat einen eigenen Bildschirm
+	if Game.season_rollover_due():
+		get_tree().change_scene_to_file.call_deferred("res://scenes/saison.tscn")
+		return
 	add_to_group("hub")
 	_build_ui()
 	update_topbar()
 	show_screen("Übersicht")
-	if Game.season_over():
-		_show_season_end.call_deferred()
+	if Game.season_just_rolled:
+		Game.season_just_rolled = false
+		if Game.game_mode == "angebote":
+			_maybe_show_offers.call_deferred()
 
 func _build_ui() -> void:
 	var root := HBoxContainer.new()
@@ -218,12 +223,6 @@ func _build_ui() -> void:
 	_menu_dialog.confirmed.connect(func(): get_tree().change_scene_to_file("res://scenes/main_menu.tscn"))
 	add_child(_menu_dialog)
 
-	_season_dialog = AcceptDialog.new()
-	_season_dialog.title = "Saisonende"
-	_season_dialog.ok_button_text = "Neue Saison starten"
-	_season_dialog.confirmed.connect(_on_season_dialog_confirmed)
-	add_child(_season_dialog)
-
 	_offers_dialog = ConfirmationDialog.new()
 	_offers_dialog.title = "Jobangebote"
 	_offers_dialog.ok_button_text = "Angebot annehmen"
@@ -316,7 +315,9 @@ func update_topbar() -> void:
 
 	var f := Game.next_fixture(Game.my_club_id)
 	if f.is_empty():
-		_next_match_label.text = "Saison beendet"
+		var left := Game.days_until_season_end()
+		_next_match_label.text = "Saisonabschluss am 1. Juli" if left <= 1 \
+			else "Sommerpause – noch %d Tage" % left
 	else:
 		var home := int(f.home) == c.id
 		var opponent := Game.club(int(f.away) if home else int(f.home))
@@ -324,8 +325,10 @@ func update_topbar() -> void:
 		_next_match_label.text = "%s %s (%02d.%02d.)" % ["vs" if home else "bei", opponent.name, int(d.day), int(d.month)]
 
 	# Aktions-Button je nach Kalenderlage
-	if Game.season_over():
+	if Game.season_rollover_due():
 		_play_button.text = "🏁  Saison abschließen"
+	elif Game.season_over():
+		_play_button.text = "☀  Sommerpause  ⏩"
 	elif Game.is_matchday_today():
 		_play_button.text = "▶  Spieltag anpfeifen"
 	else:
@@ -348,8 +351,8 @@ func _show_toast(text: String) -> void:
 			_toast.text = "")
 
 func _on_play_pressed() -> void:
-	if Game.season_over():
-		_show_season_end()
+	if Game.season_rollover_due():
+		get_tree().change_scene_to_file("res://scenes/saison.tscn")
 		return
 	if Game.is_matchday_today():
 		get_tree().change_scene_to_file("res://scenes/match.tscn")
@@ -435,7 +438,7 @@ func _start_week_sim() -> void:
 	_sim_timer.start()
 
 func _sim_tick() -> void:
-	if Game.is_matchday_today() or Game.season_over():
+	if Game.is_matchday_today() or Game.season_rollover_due():
 		_finish_sim()
 		return
 	var r: Dictionary = Game.advance_day()
@@ -815,6 +818,8 @@ func _finish_sim() -> void:
 	update_topbar()
 	if Game.is_matchday_today():
 		_toast.text = "Spieltag erreicht – Anpfiff, wenn du bereit bist!"
+	elif Game.season_rollover_due():
+		_toast.text = "Der 1. Juli ist da – jetzt die Saison abschließen!"
 	show_screen("Übersicht")
 
 func _close_sim() -> void:
@@ -857,13 +862,7 @@ func _update_sim_display() -> void:
 		cell.add_child(cell_label)
 		_sim_strip.add_child(cell)
 
-func _on_season_dialog_confirmed() -> void:
-	update_topbar()
-	_refresh_active_screen()
-	# Echte Karriere: Nach der Saison können bessere Vereine anklopfen
-	if Game.game_mode == "angebote":
-		_maybe_show_offers()
-
+## Echte Karriere: Nach dem Saisonabschluss können bessere Vereine anklopfen.
 func _maybe_show_offers() -> void:
 	_pending_offers = Game.season_offers()
 	if _pending_offers.is_empty():
@@ -886,37 +885,3 @@ func _on_offer_accepted() -> void:
 	_toast.text = "Neuer Trainerposten: %s ✓" % Game.my_club().name
 	update_topbar()
 	_refresh_active_screen()
-
-func _show_season_end() -> void:
-	var s := Game.end_season()
-	var goal_line := "Saisonziel „%s“: %s" % [s.goal_text, "ERREICHT ✓" if s.goal_achieved else "verfehlt ✗"]
-	if int(s.get("bonus_paid", 0)) > 0:
-		goal_line += "  –  Erfolgsprämie: %s" % Fmt.money(int(s.bonus_paid))
-	var lines := [
-		"%s ist beendet!" % s.season,
-		"",
-		"Meister Erste Liga: %s" % s.champion1,
-		"Meister Zweite Liga: %s" % s.champion2,
-		"Dein Ergebnis: Platz %d (%s)" % [s.my_position, s.my_league_name],
-		goal_line,
-		"",
-		"Absteiger: %s" % ", ".join(s.relegated),
-		"Aufsteiger: %s" % ", ".join(s.promoted),
-	]
-	if not s.retired.is_empty():
-		lines.append("")
-		lines.append("Karriereende bei deinem Verein: %s" % ", ".join(s.retired))
-	var notable: Array = s.get("retired_notable", [])
-	if not notable.is_empty():
-		lines.append("")
-		lines.append("Prominente Rücktritte im Fußball:")
-		for i in mini(5, notable.size()):
-			lines.append("  • %s" % notable[i])
-	var youth: Array = s.get("new_youth", [])
-	if not youth.is_empty():
-		lines.append("")
-		lines.append("Aus deiner Jugend rücken auf:")
-		for entry in youth:
-			lines.append("  • %s" % entry)
-	_season_dialog.dialog_text = "\n".join(lines)
-	_season_dialog.popup_centered()

@@ -60,6 +60,7 @@ var win_bonus := 0             # Ausgehandelte Siegprämie pro gewonnenem Spiel
 var coach_exit_clause := false # Ausstiegsklausel: erlaubt den ablösefreien Wechsel trotz Vertrag
 var coach_money := 0           # Dein persönliches Trainerkonto (Gehalt + Prämien)
 var season_goal := {}          # Saisonziel des Vorstands: {text, position}
+var season_just_rolled := false  # true direkt nach dem Saisonabschluss (Hub zeigt Angebote)
 var lineup_presets: Array = [] # gespeicherte Aufstellungen: {name, formation, lineup, spots, bench}
 var pick_weights := {"str": 1.0, "fresh": 0.4, "form": 0.4}  # Kriterien der Auto-Aufstellung
 var my_club_id := -1
@@ -190,8 +191,22 @@ func matchday() -> int:
 func season_label() -> String:
 	return "Saison %d/%02d" % [world.season_year, (int(world.season_year) + 1) % 100]
 
+## Alle Spieltage gespielt – es folgt die Sommerpause bis zum 30. Juni.
 func season_over() -> bool:
 	return matchday() >= ROUNDS_PER_SEASON
+
+## Der 1. Juli ist erreicht: Die Spielzeit ist kalendarisch vorbei und muss
+## abgeschlossen werden (Auf-/Abstieg, Entwicklung, neuer Spielplan).
+func season_rollover_due() -> bool:
+	return date_unix() >= ScheduleGen.season_start(int(world.season_year) + 1)
+
+## Letzter Tag der laufenden Spielzeit (30. Juni).
+func season_end_unix() -> int:
+	return ScheduleGen.season_end(int(world.season_year))
+
+## Tage bis zum Saisonabschluss – nur nach dem letzten Spieltag interessant.
+func days_until_season_end() -> int:
+	return maxi(0, int((ScheduleGen.season_start(int(world.season_year) + 1) - date_unix()) / DAY))
 
 # ------------------------------------------------------------------ Kalender & Tagesablauf
 
@@ -248,7 +263,8 @@ func day_kind(unix: int) -> Dictionary:
 			return {"kind": "offseason", "text": "Sommerpause"}
 		return {"kind": "preseason", "text": "Vorbereitung"}
 	if day_start > last:
-		return {"kind": "offseason", "text": "Saisonende"}
+		# Nach dem letzten Spieltag bis zum 30. Juni: Sommerpause
+		return {"kind": "offseason", "text": "Sommerpause"}
 	# Längere Lücke zwischen zwei Spieltagen (mehr als 10 Tage) = Winterpause
 	for i in range(dates.size() - 1):
 		var a := int(dates[i])
@@ -263,7 +279,9 @@ func day_kind(unix: int) -> Dictionary:
 ## Einen Tag weiterschalten (nicht über den anstehenden Spieltag hinaus).
 ## Rückgabe: {news: [Meldungen], decision: {} oder Entscheidungs-Ereignis}
 func advance_day() -> Dictionary:
-	if season_over() or is_matchday_today():
+	# Nach dem letzten Spieltag läuft der Kalender weiter bis zum 30. Juni –
+	# erst der 1. Juli stoppt ihn für den Saisonabschluss.
+	if is_matchday_today() or season_rollover_due():
 		return {"news": [], "decision": {}}
 	world.date = date_unix() + DAY
 	_daily_recovery()
@@ -306,9 +324,13 @@ func _daily_events() -> Dictionary:
 	var events: Array = []
 	var c := my_club()
 	var squad := c.players(world.players)
+	var kind: String = str(day_kind(date_unix()).kind)
+	# In der Sommerpause hat die Mannschaft frei: kein Training, keine
+	# Trainingsverletzungen – nur der Kalender läuft weiter.
+	var resting := kind == "offseason"
 
 	# Trainingsverletzung (selten, aber bitter)
-	if randf() < 0.02:
+	if not resting and randf() < 0.02:
 		var fit := squad.filter(func(p): return p.is_available())
 		if not fit.is_empty():
 			var p: PlayerData = fit.pick_random()
@@ -317,7 +339,7 @@ func _daily_events() -> Dictionary:
 				p.full_name(), p.injury_matchdays, "" if p.injury_matchdays == 1 else "e"]))
 
 	# Trainingsheld: Formschub für einen Spieler
-	var excel_chance := 0.10 if training_focus == "Leistung" else 0.06
+	var excel_chance := 0.0 if resting else (0.10 if training_focus == "Leistung" else 0.06)
 	if randf() < excel_chance and not squad.is_empty():
 		var p: PlayerData = squad.pick_random()
 		p.form = clampf(p.form + 0.02, 0.8, 1.2)
@@ -332,7 +354,6 @@ func _daily_events() -> Dictionary:
 
 	# --- Entscheidungs-Ereignisse (max. eines pro Tag)
 	var decision := {}
-	var kind: String = str(day_kind(date_unix()).kind)
 
 	# Testspiel-Anfrage: in der Vorbereitung häufig, während der Saison selten,
 	# und nur mit genug Abstand zum nächsten Pflichtspiel
@@ -347,7 +368,7 @@ func _daily_events() -> Dictionary:
 		decision = _friendly_request()
 
 	# Spielergespräch: ein Spieler sucht mit einem konkreten Anliegen das Gespräch
-	if decision.is_empty() and randf() < 0.05:
+	if decision.is_empty() and not resting and randf() < 0.05:
 		decision = _player_talk_request(squad, c)
 
 	return {"news": events, "decision": decision}
@@ -792,6 +813,7 @@ func end_season() -> Dictionary:
 
 	var summary := {
 		"season": season_label(),
+		"season_year": int(world.season_year),
 		"champion1": club(t1[0].club_id).name,
 		"champion2": club(t2[0].club_id).name,
 		"relegated": [],
@@ -799,6 +821,13 @@ func end_season() -> Dictionary:
 		"retired": [],
 		"my_position": my_league().position_of(my_club_id),
 		"my_league_name": my_league().name,
+		# Abschlussdaten VOR jeder Veränderung sichern – danach sind Tabellen
+		# geleert, Statistiken zurückgesetzt und Spieler gealtert.
+		"tables": [_final_table(l1, t1, 15, -1), _final_table(l2, t2, -1, 3)],
+		"scorers": _season_scorers(),
+		"ratings": _season_best_rated(),
+		"my_squad": _my_season_squad(),
+		"my_row": _my_table_row(t1 if my_club().league_id == 1 else t2),
 	}
 
 	# Saisonziel auswerten: Erfolg stärkt den Ruf, Misserfolg kostet ihn
@@ -902,6 +931,81 @@ func end_season() -> Dictionary:
 	world.date = ScheduleGen.season_start(int(world.season_year))
 	world.matchday_dates = ScheduleGen.matchday_dates(int(world.season_year))
 	return summary
+
+## Abschlusstabelle einer Liga als reine Anzeigedaten. relegation_from ist der
+## erste Abstiegsplatz (0-basiert, -1 = keiner), promotion_to die Anzahl der
+## Aufstiegsplätze (-1 = keine).
+func _final_table(lg: LeagueData, rows: Array, relegation_from: int, promotion_to: int) -> Dictionary:
+	var out: Array = []
+	for i in rows.size():
+		var row: Dictionary = rows[i]
+		var c := club(int(row.club_id))
+		var mark := ""
+		if i == 0:
+			mark = "champion"
+		elif promotion_to > 0 and i < promotion_to:
+			mark = "promoted"
+		elif relegation_from >= 0 and i >= relegation_from:
+			mark = "relegated"
+		out.append({
+			"pos": i + 1, "club_id": c.id, "name": c.name, "short": c.short_name, "color": c.color,
+			"played": int(row.played), "won": int(row.won), "drawn": int(row.drawn), "lost": int(row.lost),
+			"gf": int(row.gf), "ga": int(row.ga), "diff": int(row.gf) - int(row.ga),
+			"points": int(row.points), "mark": mark, "mine": c.id == my_club_id,
+		})
+	return {"league": lg.name, "rows": out}
+
+## Zeile der eigenen Mannschaft aus der Abschlusstabelle.
+func _my_table_row(rows: Array) -> Dictionary:
+	for i in rows.size():
+		if int(rows[i].club_id) == my_club_id:
+			var row: Dictionary = rows[i]
+			return {"pos": i + 1, "played": int(row.played), "won": int(row.won), "drawn": int(row.drawn),
+				"lost": int(row.lost), "gf": int(row.gf), "ga": int(row.ga), "points": int(row.points)}
+	return {}
+
+## Torjägerliste beider Ligen (die besten 12).
+func _season_scorers() -> Array:
+	var list: Array = []
+	for pid in world.players:
+		var p: PlayerData = world.players[pid]
+		if p.goals_season <= 0:
+			continue
+		var c := club(p.club_id)
+		list.append({"name": p.full_name(), "pos": p.pos, "nat": p.nat, "short": c.short_name,
+			"color": c.color, "league": c.league_id, "goals": p.goals_season,
+			"matches": p.matches_season, "mine": p.club_id == my_club_id})
+	list.sort_custom(func(a, b): return int(a.goals) > int(b.goals))
+	return list.slice(0, 12)
+
+## Der eigene Kader mit seiner Saisonbilanz, nach Note sortiert.
+func _my_season_squad() -> Array:
+	var list: Array = []
+	for pid in my_club().player_ids:
+		if not world.players.has(pid):
+			continue
+		var p: PlayerData = world.players[pid]
+		if p.matches_season <= 0:
+			continue
+		list.append({"name": p.full_name(), "pos": p.pos, "nat": p.nat, "age": p.age,
+			"matches": p.matches_season, "goals": p.goals_season, "note": p.avg_rating(),
+			"strength": p.strength})
+	list.sort_custom(func(a, b): return float(a.note) < float(b.note))
+	return list
+
+## Beste Durchschnittsnoten der Saison (mindestens 15 Einsätze).
+func _season_best_rated() -> Array:
+	var list: Array = []
+	for pid in world.players:
+		var p: PlayerData = world.players[pid]
+		if p.matches_season < 15:
+			continue
+		var c := club(p.club_id)
+		list.append({"name": p.full_name(), "pos": p.pos, "nat": p.nat, "short": c.short_name,
+			"color": c.color, "note": p.avg_rating(), "matches": p.matches_season,
+			"mine": p.club_id == my_club_id})
+	list.sort_custom(func(a, b): return float(a.note) < float(b.note))
+	return list.slice(0, 10)
 
 ## Karriereende individuell statt Stichtag: Feldspieler hören meist mit 33–37 auf,
 ## Torhüter deutlich später (bis ~40), Stars hängen gern noch Jahre dran,
