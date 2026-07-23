@@ -1746,13 +1746,19 @@ func _migrate_lower_leagues_v031() -> void:
 			continue
 		world.leagues[lg.id] = lg
 	# Spielstände mit EINER Regionalliga (v0.31.0): Die Vereine wandern in die
-	# Staffel, die ihnen in den Stammdaten zugewiesen ist.
+	# Staffel ihres Bundeslands. Das Bundesland kommt aus den Stammdaten (per
+	# Kürzel gematcht, IDs sind seit v0.33 nicht mehr positionsgebunden).
+	var land_by_short := {}
+	for def in Data.club_defs:
+		land_by_short[str(def.get("short", ""))] = str(def.get("land", ""))
 	var regional_split := false
 	for cid in world.clubs:
 		var c: ClubData = world.clubs[cid]
-		if c.league_id != 4 or cid > Data.club_defs.size():
+		if c.league_id != 4:
 			continue
-		var target := int(Data.club_defs[cid - 1].league)
+		if c.land == "" and land_by_short.has(c.short_name):
+			c.land = str(land_by_short[c.short_name])
+		var target := ClubData.staffel_for_land(c.land) if c.land != "" else 4
 		if target != 4:
 			c.league_id = target
 			regional_split = true

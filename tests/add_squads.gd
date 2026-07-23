@@ -21,22 +21,23 @@ func _ready() -> void:
 	var added := 0
 	var new_entries: Array = []
 	for i in clubs.size():
-		var club_id := i + 1
+		var def: Dictionary = clubs[i]
+		var club_id := int(def.get("id", i + 1))
 		if have.has(club_id):
 			continue
-		var def: Dictionary = clubs[i]
 		# Fester Seed je Verein: die Datenbank muss reproduzierbar bleiben
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash("squad|%s|%s" % [str(def.short), str(def.name)])
+		var is_reserve: bool = str(def.get("parent", "")) != ""
 		var star_given := false
-		var plan: Dictionary = PLAN_UNTERBAU if int(def.league) >= 4 else PLAN
+		var plan: Dictionary = PLAN_UNTERBAU if int(def.league) >= 4 or is_reserve else PLAN
 		for pos in plan:
 			for n in plan[pos]:
 				var boost := 0
-				if not star_given and pos == "MS":
+				if not star_given and pos == "MS" and not is_reserve:
 					boost = 6
 					star_given = true
-				new_entries.append(_make_entry(club_id, int(def.strength), pos, boost, rng))
+				new_entries.append(_make_entry(club_id, int(def.strength), pos, boost, rng, is_reserve))
 				added += 1
 	players.append_array(new_entries)
 	players.sort_custom(func(a, b):
@@ -50,10 +51,11 @@ func _ready() -> void:
 	print("Ergänzt: %d Spieler – jetzt %d gesamt" % [added, players.size()])
 	get_tree().quit(0)
 
-func _make_entry(club_id: int, base_strength: int, pos: String, boost: int, rng: RandomNumberGenerator) -> Dictionary:
+func _make_entry(club_id: int, base_strength: int, pos: String, boost: int, rng: RandomNumberGenerator, is_reserve := false) -> Dictionary:
 	var first_name: String = Data.first_names[rng.randi() % Data.first_names.size()]
 	var last_name: String = Data.last_names[rng.randi() % Data.last_names.size()]
-	var age := rng.randi_range(18, 33)
+	# Zweitmannschaften bestehen aus jungen Spielern (Nachwuchs, U23)
+	var age := rng.randi_range(17, 22) if is_reserve else rng.randi_range(18, 33)
 	var target := clampi(base_strength + rng.randi_range(-9, 7) + boost, 28, 94)
 	var attrs := PlayerData.make_attributes(pos, target)
 	var p := PlayerData.new()
