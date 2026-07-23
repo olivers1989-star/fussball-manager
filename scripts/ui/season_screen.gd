@@ -139,12 +139,13 @@ func _build_head() -> PanelContainer:
 	goal.add_theme_color_override("font_color", UITheme.ACCENT if achieved else UITheme.DANGER)
 	mine_texts.add_child(goal)
 
-	# Die Meister der spielbaren Ligen – die fünf Staffelmeister der
-	# Regionalliga stehen in der Seitenspalte, sonst platzt die Kopfzeile
+	# Meisterkacheln nur für die drei überregionalen Ligen (1.–3.) – die fünf
+	# Staffelmeister der Regionalliga stehen in der Seitenspalte, sonst platzt
+	# die Kopfzeile
 	var tables: Array = _s.get("tables", [])
 	for t in tables:
 		var rows: Array = t.get("rows", [])
-		if rows.is_empty() or not bool(t.get("playable", true)):
+		if rows.is_empty() or int(t.get("league_id", 0)) > 3:
 			continue
 		row.add_child(_champion_card(str(t.league), rows[0]))
 	return card

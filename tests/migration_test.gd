@@ -92,7 +92,7 @@ func _check_lower_league_migration() -> void:
 		var club: ClubData = Game.world.clubs[cid]
 		assert(ClubData.LAENDER.has(club.land), "%s ohne Bundesland nach der Migration" % club.name)
 	assert(Game.world.clubs.size() == 146, "Es fehlen Vereine: %d" % Game.world.clubs.size())
-	assert(not Game.league(4).playable, "Die Regionalliga darf nicht spielbar sein")
+	assert(Game.league(4).playable, "Die Regionalliga muss jetzt spielbar sein")
 	assert(Game.league(8).club_ids.size() == 18, "Die fuenfte Staffel fehlt")
 	for lid in [3, 4, 5, 6, 7, 8]:
 		var lg: LeagueData = Game.world.leagues[lid]
@@ -166,7 +166,7 @@ func _check_regional_split_migration() -> void:
 	for lid in Data.REGIONAL_LEAGUES:
 		var lg: LeagueData = Game.world.leagues[lid]
 		assert(lg.club_ids.size() == 18, "%s hat %d statt 18 Vereine" % [lg.name, lg.club_ids.size()])
-		assert(not lg.playable, "%s darf nicht spielbar sein" % lg.name)
+		assert(lg.playable, "%s muss spielbar sein" % lg.name)
 		assert(lg.fixtures.size() == 306, "%s hat %d Partien" % [lg.name, lg.fixtures.size()])
 		total += lg.club_ids.size()
 	assert(total == 90, "Der Regionalliga-Pool hat %d statt 90 Vereine" % total)

@@ -40,7 +40,7 @@ func _ready() -> void:
 	assert(Game.league(0).club_ids.is_empty(), "Die Oberliga startet leer")
 	assert(Game.league(1).fixtures.size() == 306)   # 18 Vereine
 	assert(Game.league(3).fixtures.size() == 380)   # 20 Vereine
-	assert(not Game.league(4).playable and not Game.league(8).playable)
+	assert(Game.league(4).playable and Game.league(8).playable)   # Regionalligen spielbar
 
 	# Kalender: Saison startet am 1. Juli (5 Wochen Vorbereitung), Spieltage samstags, Winterpause
 	assert(Game.date_dict().month == 7 and Game.date_dict().day == 1)

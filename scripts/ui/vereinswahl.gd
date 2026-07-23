@@ -75,6 +75,8 @@ func _fill_clubs() -> void:
 			var def: Dictionary = Data.club_defs[i]
 			if int(def.league) != league_no:
 				continue
+			if str(def.get("parent", "")) != "":
+				continue   # Zweitmannschaften kann man nicht übernehmen
 			var item := _club_tree.create_item(parent)
 			item.set_text(0, def.name)
 			item.set_custom_color(0, Color(def.color))

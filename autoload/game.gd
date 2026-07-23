@@ -1186,42 +1186,57 @@ func _apply_promotion_and_relegation(tables: Dictionary, summary: Dictionary) ->
 ## Aufstieg aus der Regionalliga: Die fünf Staffelmeister werden verglichen.
 ## Die drei besten steigen direkt auf, die beiden übrigen spielen in der
 ## Aufstiegsrelegation den vierten Platz in der Dritten Liga aus.
-func _promote_from_regional(tables: Dictionary, moves: Dictionary, playoffs: Array) -> void:
-	var champions: Array = []
-	for lid in Data.REGIONAL_LEAGUES:
-		if not world.leagues.has(lid):
-			continue
-		var rows: Array = tables[lid]
-		if rows.is_empty():
-			continue
-		champions.append({"lid": lid, "row": rows[0], "club_id": int(rows[0].club_id)})
-	champions.sort_custom(func(x, y):
-		if int(x.row.points) != int(y.row.points):
-			return int(x.row.points) > int(y.row.points)
-		var dx: int = int(x.row.gf) - int(x.row.ga)
-		var dy: int = int(y.row.gf) - int(y.row.ga)
-		if dx != dy:
-			return dx > dy
-		return int(x.row.gf) > int(y.row.gf))
+## Der rotierende Dreierkreis: Nord, Nordost, Bayern. Reihum bekommt einer von
+## ihnen den festen dritten Direktaufstiegsplatz.
+const RL_ROTATION_GROUP := [4, 5, 8]
 
-	for i in mini(3, champions.size()):
-		moves[int(champions[i].club_id)] = 3
-		_add_news("liga", "%s ist Meister der %s und steigt direkt in die Dritte Liga auf." % [
-			club(int(champions[i].club_id)).name, world.leagues[int(champions[i].lid)].name])
-	if champions.size() < 5:
-		# Weniger als fünf Staffeln (alte Spielstände): dann rückt der Vierte nach
-		if champions.size() >= 4:
-			moves[int(champions[3].club_id)] = 3
+func _promote_from_regional(tables: Dictionary, moves: Dictionary, playoffs: Array) -> void:
+	# Staffelmeister je Regionalliga
+	var champ := {}
+	for lid in Data.REGIONAL_LEAGUES:
+		if world.leagues.has(lid) and not tables.get(lid, []).is_empty():
+			champ[lid] = int(tables[lid][0].club_id)
+	if champ.is_empty():
 		return
-	var a := club(int(champions[3].club_id))
-	var b := club(int(champions[4].club_id))
-	var result := _play_two_legs(a, b)
-	result["kind"] = "aufstiegsrunde"
-	result["title"] = "Aufstiegsrelegation zur Dritten Liga"
-	playoffs.append(result)
-	moves[a.id if bool(result.a_wins) else b.id] = 3
-	_add_news("relegation", "Aufstiegsrelegation: %s gegen %s %d:%d – %s steigt in die Dritte Liga auf." % [
-		a.name, b.name, int(result.total_a), int(result.total_b), str(result.winner)])
+
+	# West (6) und Südwest (7) steigen IMMER direkt auf
+	var direct: Array = []
+	for lid in [6, 7]:
+		if champ.has(lid):
+			direct.append(lid)
+
+	# Aus Nord/Nordost/Bayern bekommt einer reihum den festen Direktplatz,
+	# die beiden anderen spielen den letzten Aufstiegsplatz aus.
+	var group: Array = RL_ROTATION_GROUP.filter(func(l): return champ.has(l))
+	var playoff_pair: Array = []
+	if group.size() >= 1:
+		var idx: int = int(world.get("rl_rotation", 0)) % group.size()
+		var rot_direct: int = int(group[idx])
+		direct.append(rot_direct)
+		playoff_pair = group.filter(func(l): return l != rot_direct)
+	world["rl_rotation"] = int(world.get("rl_rotation", 0)) + 1
+
+	# Direktaufsteiger
+	for lid in direct:
+		moves[champ[lid]] = 3
+		_add_news("liga", "%s ist Meister der %s und steigt direkt in die Dritte Liga auf." % [
+			club(champ[lid]).name, world.leagues[lid].name])
+
+	# Aufstiegsspiele um den letzten Platz (Hin- und Rückspiel)
+	if playoff_pair.size() == 2:
+		var a := club(champ[int(playoff_pair[0])])
+		var b := club(champ[int(playoff_pair[1])])
+		var result := _play_two_legs(a, b)
+		result["kind"] = "aufstiegsrunde"
+		result["title"] = "Aufstiegsspiele zur Dritten Liga (%s ↔ %s)" % [
+			world.leagues[int(playoff_pair[0])].short_name, world.leagues[int(playoff_pair[1])].short_name]
+		playoffs.append(result)
+		moves[a.id if bool(result.a_wins) else b.id] = 3
+		_add_news("relegation", "Aufstiegsspiele: %s gegen %s %d:%d – %s steigt in die Dritte Liga auf." % [
+			a.name, b.name, int(result.total_a), int(result.total_b), str(result.winner)])
+	elif playoff_pair.size() == 1:
+		# Nur zwei Staffeln im Dreierkreis vorhanden (alte Spielstände): direkt hoch
+		moves[champ[int(playoff_pair[0])]] = 3
 
 ## Eine Zweitmannschaft darf NIE in derselben Liga wie ihre erste Mannschaft
 ## stehen. Passiert das (weil die erste Mannschaft in die Dritte Liga oder
@@ -1293,6 +1308,8 @@ func _extra_relegations(lg: LeagueData, rows: Array, count: int, movements: Dict
 		var cid := int(rows[i].club_id)
 		if not lg.club_ids.has(cid):
 			continue   # schon aufgestiegen
+		if cid == my_club_id:
+			continue   # den Verein des Spielers nicht in die Oberliga schieben
 		var c := club(cid)
 		c.league_id = 0
 		lg.club_ids.erase(cid)
@@ -1502,8 +1519,10 @@ func season_offers() -> Array:
 		if cid == my_club_id:
 			continue
 		var c: ClubData = world.clubs[cid]
+		if c.is_reserve():
+			continue   # eine Zweitmannschaft kann man nicht übernehmen
 		if not world.leagues.has(c.league_id) or not world.leagues[c.league_id].playable:
-			continue   # aus dem Unterbau kommen keine Trainerangebote
+			continue   # aus dem Unterbau (Oberliga) kommen keine Trainerangebote
 		if c.base_strength > my_club().base_strength and absf(c.base_strength - reputation) <= 4.0:
 			candidates.append(cid)
 	candidates.shuffle()
@@ -1845,6 +1864,7 @@ func _world_to_dict() -> Dictionary:
 		"clubs": clubs,
 		"leagues": leagues,
 		"retired": world.get("retired", []),
+		"rl_rotation": int(world.get("rl_rotation", 0)),
 	}
 
 func _world_from_dict(d: Dictionary) -> Dictionary:
@@ -1858,6 +1878,7 @@ func _world_from_dict(d: Dictionary) -> Dictionary:
 		"clubs": {},
 		"leagues": {},
 		"retired": d.get("retired", []),
+		"rl_rotation": int(d.get("rl_rotation", 0)),
 	}
 	for t in d.get("matchday_dates", []):
 		w.matchday_dates.append(int(t))

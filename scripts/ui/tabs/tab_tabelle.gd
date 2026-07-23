@@ -65,6 +65,11 @@ func _init() -> void:
 ## Farbstreifen links: Aufstieg grün, Relegation gelb, Abstieg rot – abgeleitet
 ## aus den Auf-/Abstiegsregeln der Liga.
 func _zone_color(pos: int, lg: LeagueData) -> Color:
+	# Regionalliga: Der Staffelmeister steigt auf oder spielt um den Aufstieg –
+	# in jedem Fall grün markiert. (Der Aufstieg läuft über den DFB-Modus, nicht
+	# über die generischen Auf-/Abstiegsregeln.)
+	if Data.REGIONAL_LEAGUES.has(lg.id):
+		return UITheme.ACCENT if pos == 1 else Color(0, 0, 0, 0)
 	var rules: Dictionary = Game.LEAGUE_RULES.get(lg.id, {})
 	if rules.is_empty():
 		return Color(0, 0, 0, 0)

@@ -85,10 +85,11 @@ func _ready() -> void:
 	for i in range(16, 20):
 		assert(str(tables[2].rows[i].mark) == "relegated",
 			"Platz %d der Dritten Liga ist kein Absteiger" % (i + 1))
-	# Regionalliga: fünf Staffeln, keine Absteiger, der Meister spielt um den Aufstieg
+	# Regionalliga: fünf Staffeln (spielbar), keine sportlichen Absteiger,
+	# der Meister steigt auf oder spielt um den Aufstieg
 	var staffeln := 0
 	for t in tables:
-		if bool(t.playable):
+		if not Data.REGIONAL_LEAGUES.has(int(t.league_id)):
 			continue
 		staffeln += 1
 		assert(str(t.rows[0].mark) == "champion", "%s hat keinen Meister" % t.league)
