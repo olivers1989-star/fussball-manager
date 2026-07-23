@@ -1,0 +1,37 @@
+Fussball Manager
+================
+
+Was liegt in diesem Ordner?
+
+  FussballManager.exe   Das Spiel.
+  FussballManager.pck   Grafik, Szenen und Programmcode.
+  data\                 Die Stammdaten – editierbar.
+
+Der Ordner data
+---------------
+
+  clubs.json    Alle Vereine: Name, Kürzel, Stadt, BUNDESLAND, Stadion,
+                Kapazität, Stärke, Liga, Farbe, Vorsitzender und die feste
+                Vereins-ID.
+  players.json  Die feste Spielerdatenbank. Jeder neue Spielstand startet mit
+                genau diesen Kadern.
+  names.json    Vor- und Nachnamen sowie Sponsorennamen für erzeugte Spieler.
+  logos\        Vereinslogos, benannt nach der Vereins-ID (z. B. 1.png).
+                Näheres steht in logos\LIESMICH.txt.
+
+Änderungen an diesen Dateien wirken beim nächsten Spielstart. Ein bereits
+laufender Spielstand behält seine Vereine und Spieler – neue Stammdaten greifen
+also erst in einem neuen Spiel.
+
+Sicherheitshalber vor dem Bearbeiten eine Kopie anlegen. Fehlt eine Datei oder
+ist sie fehlerhaft, greift das Spiel auf die mitgelieferte Fassung im
+FussballManager.pck zurück.
+
+Spielstände
+-----------
+
+Spielstände liegen NICHT hier, sondern unter:
+  %APPDATA%\Godot\app_userdata\Fussball Manager\saves
+
+Ein Update wird einfach über die bestehende Installation installiert. Die
+Spielstände bleiben dabei erhalten.

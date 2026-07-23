@@ -36,7 +36,8 @@ func _ready() -> void:
 	var world: Dictionary = Game.world
 	print("Spieler: %d, Vereine: %d, Ligen: %d" % [world.players.size(), world.clubs.size(), world.leagues.size()])
 	assert(world.clubs.size() == 146)
-	assert(world.leagues.size() == 8)
+	assert(world.leagues.size() == 9)   # 8 Spielklassen + Oberliga-Warteschlange
+	assert(Game.league(0).club_ids.is_empty(), "Die Oberliga startet leer")
 	assert(Game.league(1).fixtures.size() == 306)   # 18 Vereine
 	assert(Game.league(3).fixtures.size() == 380)   # 20 Vereine
 	assert(not Game.league(4).playable and not Game.league(8).playable)

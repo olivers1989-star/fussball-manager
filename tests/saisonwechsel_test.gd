@@ -150,6 +150,8 @@ func _ready() -> void:
 	assert(str(Game.day_kind(Game.date_unix()).kind) == "preseason",
 		"1. Juli gilt als %s statt Vorbereitung" % Game.day_kind(Game.date_unix()).kind)
 	for lg_id in Game.world.leagues:
+		if lg_id == 0:
+			continue   # Oberliga: Warteschlange ohne Spielbetrieb
 		var lg: LeagueData = Game.world.leagues[lg_id]
 		var want_clubs: int = 20 if lg_id == 3 else 18
 		var want_games: int = 380 if lg_id == 3 else 306

@@ -126,11 +126,25 @@ func home_staffel() -> int:
 
 ## Pfad zum Vereinslogo. Die Vereins-ID ist stabil (steht in clubs.json), damit
 ## Logos zugeordnet bleiben, auch wenn Vereine ergänzt oder umbenannt werden.
+## Gesucht wird zuerst im offenen Ordner data/logos neben der EXE.
 func logo_path() -> String:
-	return "res://data/logos/%d.png" % id
+	return Data.data_file("logos/%d.png" % id)
 
 func has_logo() -> bool:
-	return ResourceLoader.exists(logo_path())
+	return FileAccess.file_exists(logo_path())
+
+## Lädt das Logo als Textur – auch aus einer Datei außerhalb des Projekts.
+func load_logo() -> Texture2D:
+	var path := logo_path()
+	if not FileAccess.file_exists(path):
+		return null
+	if path.begins_with("res://"):
+		return load(path) as Texture2D
+	var img := Image.new()
+	if img.load(path) != OK:
+		push_warning("Vereinslogo kann nicht gelesen werden: " + path)
+		return null
+	return ImageTexture.create_from_image(img)
 ## Bankgröße in Liga 1 und 2 (später über eine Ligen-Basis editierbar).
 const BENCH_SIZE := 7
 

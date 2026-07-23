@@ -100,6 +100,8 @@ static func _saturdays(year: int) -> Array:
 ## Baut den Spielplan einer Liga und legt ihn auf das gemeinsame Spieltagsraster.
 ## 18er-Ligen bekommen die 34 Samstage, 20er-Ligen alle 38 Termine.
 static func build_league_fixtures(club_ids: Array) -> Array:
+	if club_ids.size() < 2:
+		return []   # z. B. die Oberliga: Warteschlange ohne Spielbetrieb
 	var fixtures := build_fixtures(club_ids)
 	var rounds: int = (club_ids.size() - 1) * 2
 	if rounds >= total_rounds():

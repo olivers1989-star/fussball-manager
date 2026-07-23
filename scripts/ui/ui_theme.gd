@@ -145,10 +145,11 @@ static func club_badge(short_name: String, club_color: Color, size := 46) -> Lab
 ## eines hinterlegt ist – sonst der gezeichnete Farbkreis mit dem Kürzel.
 ## Die Vereins-ID ist stabil, damit Logos zugeordnet bleiben.
 static func club_logo(club: ClubData, size := 46) -> Control:
-	if not club.has_logo():
+	var texture := club.load_logo()
+	if texture == null:
 		return club_badge(club.short_name, Color(club.color), size)
 	var icon := TextureRect.new()
-	icon.texture = load(club.logo_path())
+	icon.texture = texture
 	icon.custom_minimum_size = Vector2(size, size)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

@@ -150,6 +150,8 @@ static func goal_from_rank(rank: int, tier: int) -> Dictionary:
 	return {"text": "Klassenerhalt", "position": 15}
 
 func _board_goal_for(c: ClubData) -> Dictionary:
+	if not world.leagues.has(c.league_id):
+		return {"text": "Klassenerhalt", "position": 15}
 	var lg: LeagueData = world.leagues[c.league_id]
 	var stronger := 0
 	for cid in lg.club_ids:
@@ -751,7 +753,8 @@ func _heal_and_suspend_tick() -> void:
 	for pid in world.players:
 		var p: PlayerData = world.players[pid]
 		# Nur zählen, wenn die Liga des Spielers an diesem Termin gespielt hat
-		if not world.leagues[club(p.club_id).league_id].plays_in_round(matchday()):
+		var player_league: int = club(p.club_id).league_id
+		if not world.leagues.has(player_league) or not world.leagues[player_league].plays_in_round(matchday()):
 			continue
 		if p.injury_matchdays > 0:
 			p.injury_matchdays -= 1
@@ -816,6 +819,8 @@ func _apply_skill_form_effects(my_result: Dictionary) -> void:
 func _apply_matchday_finances() -> void:
 	for cid in world.clubs:
 		var c: ClubData = world.clubs[cid]
+		if not world.leagues.has(c.league_id):
+			continue   # Oberliga-Verein: wartet nur, spielt nicht
 		var lg: LeagueData = world.leagues[c.league_id]
 		# An englischen Wochen pausieren die 18er-Ligen – dann fallen dort weder
 		# Zuschauereinnahmen noch Gehälter für diesen Spieltag an
@@ -1137,7 +1142,10 @@ func _apply_promotion_and_relegation(tables: Dictionary, summary: Dictionary) ->
 	for lid in world.leagues:
 		world.leagues[lid].club_ids.clear()
 	for cid in world.clubs:
-		world.leagues[world.clubs[cid].league_id].club_ids.append(cid)
+		var lid: int = world.clubs[cid].league_id
+		if world.leagues.has(lid):
+			world.leagues[lid].club_ids.append(cid)
+	_balance_staffeln(tables, movements)
 
 	summary["movements"] = []
 	for def in Data.LEAGUE_DEFS:
@@ -1189,63 +1197,78 @@ func _promote_from_regional(tables: Dictionary, moves: Dictionary, playoffs: Arr
 	_add_news("relegation", "Aufstiegsrelegation: %s gegen %s %d:%d – %s steigt in die Dritte Liga auf." % [
 		a.name, b.name, int(result.total_a), int(result.total_b), str(result.winner)])
 
-## Absteiger aus der Dritten Liga auf die Staffeln verteilen – nach dem
-## BUNDESLAND des Vereins, genau wie im echten Spielbetrieb. Frei werden je
-## Saison vier Plätze (in den Staffeln, deren Meister aufgestiegen ist).
-##
-## Steigen zwei Vereine aus demselben Bundesland ab, passt nur einer in seine
-## Heimatstaffel. Dann greift die Ausweichregel: Der Verein kommt in die
-## nächstgelegene Staffel mit freiem Platz (ClubData.STAFFEL_NEIGHBOURS). So
-## behalten alle fünf Staffeln dauerhaft ihre 18 Vereine.
+## Absteiger aus der Dritten Liga gehen IMMER in die Staffel ihres Bundeslands –
+## niemand wird in eine fremde Region verschoben.
 func _spread_relegated_to_staffeln(moves: Dictionary) -> void:
-	var free := {}
-	for lid in Data.REGIONAL_LEAGUES:
-		if world.leagues.has(lid):
-			free[lid] = 0
-	if free.is_empty():
-		return
-	# Jeder Aufsteiger macht in seiner Staffel einen Platz frei
-	for cid in moves:
-		var from_lid: int = club(cid).league_id
-		if free.has(from_lid):
-			free[from_lid] += 1
-
-	var pending: Array = []
 	for cid in moves:
 		if club(cid).league_id == 3 and int(moves[cid]) >= 4:
-			pending.append(cid)
-	# Erster Durchgang: Wer in seine Heimatstaffel passt, kommt dorthin
-	var leftover: Array = []
-	for cid in pending:
-		var home: int = club(cid).home_staffel()
-		if int(free.get(home, 0)) > 0:
-			moves[cid] = home
-			free[home] -= 1
-		else:
-			leftover.append(cid)
-	# Zweiter Durchgang: Ausweichen in die nächstgelegene Staffel mit Platz
-	for cid in leftover:
+			moves[cid] = club(cid).home_staffel()
+
+## Sollstärke jeder Regionalliga-Staffel.
+const STAFFEL_SIZE := 18
+
+## Bringt jede Staffel wieder auf ihre Sollstärke – so wie im echten
+## Spielbetrieb: Kommen aus der Dritten Liga mehr Vereine in eine Region als
+## dort Plätze frei wurden, ERHÖHT SICH DIE ZAHL DER REGELABSTEIGER dieser
+## Staffel. Die zusätzlichen Absteiger gehen in die Oberliga (Liga 0, wird
+## nicht simuliert). Umgekehrt rückt aus der Oberliga derselben Region ein
+## Verein nach, wenn eine Staffel zu klein ist. Niemand wechselt die Region.
+func _balance_staffeln(tables: Dictionary, movements: Dictionary) -> void:
+	if not world.leagues.has(0):
+		world.leagues[0] = Data.build_oberliga()
+	var oberliga: LeagueData = world.leagues[0]
+	for lid in Data.REGIONAL_LEAGUES:
+		if not world.leagues.has(lid):
+			continue
+		var lg: LeagueData = world.leagues[lid]
+		var surplus: int = lg.club_ids.size() - STAFFEL_SIZE
+		if surplus > 0:
+			_extra_relegations(lg, tables.get(lid, []), surplus, movements)
+		elif surplus < 0:
+			_promote_from_oberliga(lg, -surplus, movements)
+	oberliga.club_ids.clear()
+	for cid in world.clubs:
+		if world.clubs[cid].league_id == 0:
+			oberliga.club_ids.append(cid)
+
+## Zusätzliche Regelabsteiger einer Staffel: die Schlusslichter der gerade
+## beendeten Saison, die noch in dieser Staffel stehen.
+func _extra_relegations(lg: LeagueData, rows: Array, count: int, movements: Dictionary) -> void:
+	var done := 0
+	for i in range(rows.size() - 1, -1, -1):
+		if done >= count:
+			break
+		var cid := int(rows[i].club_id)
+		if not lg.club_ids.has(cid):
+			continue   # schon aufgestiegen
 		var c := club(cid)
-		var target := -1
-		for lid in ClubData.STAFFEL_NEIGHBOURS.get(c.home_staffel(), []):
-			if int(free.get(lid, 0)) > 0:
-				target = lid
-				break
-		if target < 0:
-			# Notfall: irgendeine Staffel mit Platz, sonst die kleinste
-			for lid in free:
-				if int(free[lid]) > 0:
-					target = lid
-					break
-		if target < 0:
-			target = c.home_staffel()
-		else:
-			free[target] -= 1
-		moves[cid] = target
-		if target != c.home_staffel():
-			_add_news("liga", "%s (%s) steigt in die %s ab – in der %s war kein Platz frei." % [
-				c.name, c.land_name(), world.leagues[target].name,
-				world.leagues[c.home_staffel()].name])
+		c.league_id = 0
+		lg.club_ids.erase(cid)
+		movements[lg.id].down.append(c.name)
+		done += 1
+		_add_news("liga", "%s muss in die Oberliga – die %s hatte diese Saison %d Absteiger, weil mehr Vereine aus der Dritten Liga in die Region kamen als Plätze frei wurden." % [
+			c.name, lg.name, count])
+
+## Nachrücker aus der Oberliga derselben Region – der stärkste zuerst.
+func _promote_from_oberliga(lg: LeagueData, count: int, movements: Dictionary) -> void:
+	for n in count:
+		var best := -1
+		var best_strength := -1
+		for cid in world.clubs:
+			var c: ClubData = world.clubs[cid]
+			if c.league_id != 0 or c.home_staffel() != lg.id:
+				continue
+			if c.base_strength > best_strength:
+				best_strength = c.base_strength
+				best = cid
+		if best < 0:
+			# Keiner in der Warteschlange: Ein neuer Verein rückt nach
+			best = Data.create_oberliga_club(world, lg.id)
+		var c2 := club(best)
+		c2.league_id = lg.id
+		lg.club_ids.append(best)
+		movements[lg.id].up.append(c2.name)
+		_add_news("liga", "%s rückt aus der Oberliga in die %s nach." % [c2.name, lg.name])
 
 ## Zwei Spiele mit Gesamtstand: Verein A hat im RÜCKSPIEL Heimrecht, Verein B
 ## im Hinspiel. Steht es nach beiden Partien gleich, folgen im Rückspiel
@@ -1427,7 +1450,7 @@ func season_offers() -> Array:
 		if cid == my_club_id:
 			continue
 		var c: ClubData = world.clubs[cid]
-		if not world.leagues[c.league_id].playable:
+		if not world.leagues.has(c.league_id) or not world.leagues[c.league_id].playable:
 			continue   # aus dem Unterbau kommen keine Trainerangebote
 		if c.base_strength > my_club().base_strength and absf(c.base_strength - reputation) <= 4.0:
 			candidates.append(cid)
@@ -1712,6 +1735,8 @@ func _migrate_lower_leagues_v031() -> void:
 ## Spielstände ohne Bundesland (vor v0.33.0) bekommen es aus den Stammdaten
 ## nachgetragen – ohne das würde jeder Absteiger in der Staffel Nord landen.
 func _migrate_bundeslaender() -> void:
+	if not world.leagues.has(0):
+		world.leagues[0] = Data.build_oberliga()
 	var by_id := {}
 	for i in Data.club_defs.size():
 		var def: Dictionary = Data.club_defs[i]

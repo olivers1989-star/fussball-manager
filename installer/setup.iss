@@ -12,9 +12,14 @@ AppId={{7C1F45A9-3D82-4E1B-9C55-0F2A8B3D71E4}}
 AppName=Fussball Manager
 AppVersion={#MyAppVersion}
 AppPublisher=Oliver Smolinski
-DefaultDirName={localappdata}\Programs\Fussball Manager
+; Der Zielordner ist frei wählbar. "Für alle Benutzer" installiert nach
+; Programme (fragt nach Administratorrechten), "nur für mich" ohne.
+DefaultDirName={autopf}\Fussball Manager
 DefaultGroupName=Fussball Manager
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
+AllowRootDirectory=yes
+UsePreviousAppDir=yes
 OutputDir=..\builds
 OutputBaseFilename=FussballManager_Setup_v{#MyAppVersion}
 Compression=lzma2
@@ -32,6 +37,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\builds\FussballManager.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\builds\FussballManager.pck"; DestDir: "{app}"; Flags: ignoreversion
+; Stammdaten liegen offen im Installationsordner und sind editierbar:
+; Vereine, Namen, Spielerdatenbank und der Ordner für die Vereinslogos.
+Source: "..\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "LIESMICH.txt"; DestDir: "{app}"; Flags: ignoreversion isreadme
 
 [Icons]
 Name: "{group}\Fussball Manager"; Filename: "{app}\FussballManager.exe"

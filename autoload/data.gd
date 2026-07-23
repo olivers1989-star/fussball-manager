@@ -1,7 +1,9 @@
 extends Node
 ## Autoload "Data": lädt Stammdaten (Vereine, Namen) aus JSON und erzeugt die Spielwelt.
-## Die JSON-Dateien in res://data/ sind bewusst editierbar gehalten –
-## wer echte Vereins-/Spielernamen möchte, passt einfach clubs.json und names.json an.
+## Die JSON-Dateien liegen nach der Installation OFFEN im Programmordner
+## (Unterordner data) und sind editierbar – wer echte Vereins-/Spielernamen
+## möchte, passt einfach clubs.json und names.json an. Fehlt eine Datei,
+## greift die mitgelieferte Fassung aus dem PCK.
 
 var club_defs: Array = []
 var first_names: Array = []
@@ -11,18 +13,37 @@ var sponsors: Array = []
 func _ready() -> void:
 	# Globales Spiel-Design aktivieren (alle Szenen erben das Theme)
 	get_window().theme = UITheme.build()
-	club_defs = _load_json("res://data/clubs.json")
-	var names: Dictionary = _load_json("res://data/names.json")
+	club_defs = _load_json(data_file("clubs.json"))
+	var names: Dictionary = _load_json(data_file("names.json"))
 	first_names = names.get("first_names", [])
 	last_names = names.get("last_names", [])
 	sponsors = names.get("sponsors", [])
+
+## Der Stammdaten-Ordner NEBEN der EXE. Dort liegen die Dateien offen und
+## editierbar; nur wenn sie fehlen, greift die mitgelieferte Fassung im PCK.
+## Im Editor gibt es keinen externen Ordner – dann zählt res://data.
+static func data_dir() -> String:
+	if OS.has_feature("editor"):
+		return "res://data"
+	var external := OS.get_executable_path().get_base_dir().path_join("data")
+	return external if DirAccess.dir_exists_absolute(external) else "res://data"
+
+## Pfad einer Stammdatendatei: extern, wenn vorhanden, sonst aus dem PCK.
+static func data_file(file_name: String) -> String:
+	var external := data_dir().path_join(file_name)
+	if FileAccess.file_exists(external):
+		return external
+	return "res://data".path_join(file_name)
 
 func _load_json(path: String) -> Variant:
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		push_error("Kann Datei nicht laden: " + path)
 		return null
-	return JSON.parse_string(f.get_as_text())
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	if parsed == null:
+		push_error("Fehlerhafte JSON-Datei: " + path)
+	return parsed
 
 ## Erzeugt eine komplette neue Spielwelt: 4 Ligen, 76 Vereine, feste Kader.
 func generate_world() -> Dictionary:
@@ -39,6 +60,8 @@ func generate_world() -> Dictionary:
 
 	for lg in build_leagues():
 		world.leagues[lg.id] = lg
+	# Warteschlange unterhalb der Regionalliga (wird nicht gespielt)
+	world.leagues[0] = build_oberliga()
 
 	var sponsor_pool := sponsors.duplicate()
 	sponsor_pool.shuffle()
@@ -102,6 +125,93 @@ const LEAGUE_DEFS := [
 ## Die Staffeln der Regionalliga (vierte Ebene).
 const REGIONAL_LEAGUES := [4, 5, 6, 7, 8]
 
+## Die Oberliga (Liga 0) ist die Warteschlange unterhalb der Regionalliga. Sie
+## wird NICHT gespielt – hier warten Vereine, die aus einer Staffel absteigen
+## mussten, bis in ihrer Region wieder ein Platz frei wird. Sie steht bewusst
+## nicht in LEAGUE_DEFS und taucht deshalb in keiner Tabellenansicht auf.
+static func build_oberliga() -> LeagueData:
+	var lg := LeagueData.new()
+	lg.id = 0
+	lg.name = "Oberliga"
+	lg.short_name = "OL"
+	lg.tier = 5
+	lg.playable = false
+	return lg
+
+## Städte für neue Oberliga-Vereine je Staffel: [Stadt, Bundesland].
+const OBERLIGA_CITIES := {
+	4: [["Buxtehude", "NI"], ["Itzehoe", "SH"], ["Stade", "NI"], ["Celle", "NI"],
+		["Gifhorn", "NI"], ["Heide", "SH"], ["Husum", "SH"], ["Vechta", "NI"],
+		["Leer", "NI"], ["Uelzen", "NI"], ["Buchholz", "NI"], ["Elmshorn", "SH"]],
+	5: [["Eberswalde", "BB"], ["Riesa", "SN"], ["Gotha", "TH"], ["Bautzen", "SN"],
+		["Neubrandenburg", "MV"], ["Wismar", "MV"], ["Weimar", "TH"], ["Görlitz", "SN"],
+		["Stendal", "ST"], ["Merseburg", "ST"], ["Senftenberg", "BB"], ["Anklam", "MV"]],
+	6: [["Ahlen", "NW"], ["Bocholt", "NW"], ["Gütersloh", "NW"], ["Hamm", "NW"],
+		["Kleve", "NW"], ["Lünen", "NW"], ["Moers", "NW"], ["Neuss", "NW"],
+		["Recklinghausen", "NW"], ["Remscheid", "NW"], ["Gummersbach", "NW"], ["Erkelenz", "NW"]],
+	7: [["Baunatal", "HE"], ["Worms", "RP"], ["Idar-Oberstein", "RP"], ["Pforzheim", "BW"],
+		["Reutlingen", "BW"], ["Göppingen", "BW"], ["Hanau", "HE"], ["Wetzlar", "HE"],
+		["Homburg", "SL"], ["Kehl", "BW"], ["Neunkirchen", "SL"], ["Gießen", "HE"]],
+	8: [["Amberg", "BY"], ["Coburg", "BY"], ["Erlangen", "BY"], ["Fürstenfeldbruck", "BY"],
+		["Garmisch", "BY"], ["Kaufbeuren", "BY"], ["Memmingen", "BY"], ["Rosenheim", "BY"],
+		["Schweinfurt", "BY"], ["Straubing", "BY"], ["Cham", "BY"], ["Kulmbach", "BY"]],
+}
+
+const OBERLIGA_PREFIXES := ["SV", "FC", "TSV", "SpVgg", "1. FC", "VfB", "SC", "FSV"]
+
+## Erzeugt einen neuen Verein für die Oberliga einer Region und gibt seine ID
+## zurück. Kommt zum Zug, wenn eine Staffel Platz hat und niemand wartet.
+func create_oberliga_club(world: Dictionary, staffel: int) -> int:
+	var used_shorts := {}
+	var used_names := {}
+	var max_id := 0
+	for cid in world.clubs:
+		var existing: ClubData = world.clubs[cid]
+		used_shorts[existing.short_name] = true
+		used_names[existing.name] = true
+		max_id = maxi(max_id, existing.id)
+
+	var pool: Array = OBERLIGA_CITIES.get(staffel, OBERLIGA_CITIES[4])
+	var entry: Array = pool.pick_random()
+	var name := ""
+	for attempt in 40:
+		entry = pool.pick_random()
+		name = "%s %s" % [OBERLIGA_PREFIXES.pick_random(), str(entry[0])]
+		if not used_names.has(name):
+			break
+	var short_name := _unique_short(str(entry[0]), used_shorts)
+
+	var c := ClubData.new()
+	c.id = max_id + 1
+	c.name = name
+	c.short_name = short_name
+	c.city = str(entry[0])
+	c.land = str(entry[1])
+	c.stadium = "Sportplatz %s" % str(entry[0])
+	c.capacity = randi_range(2000, 6000)
+	c.color = ["#c8102e", "#0057a3", "#00843d", "#f4c400", "#000000"].pick_random()
+	c.base_strength = randi_range(30, 36)
+	c.league_id = 0
+	c.chairman = "%s %s" % [first_names.pick_random(), last_names.pick_random()]
+	c.sponsor_name = sponsors.pick_random() if not sponsors.is_empty() else "Regionalsponsor"
+	world.clubs[c.id] = c
+	_generate_squad(world, c)
+	c.lineup = c.best_eleven(world.players)
+	c.refresh_sponsor(world.players)
+	c.budget = maxi(int(c.salaries_per_matchday(world.players) * 34 * 0.35), 200000)
+	return c.id
+
+func _unique_short(city: String, used: Dictionary) -> String:
+	var base := city.to_upper().replace("Ä", "A").replace("Ö", "O").replace("Ü", "U").replace("ß", "S")
+	base = base.substr(0, 3)
+	if not used.has(base):
+		return base
+	for i in range(2, 100):
+		var candidate := "%s%d" % [base.substr(0, 2), i]
+		if not used.has(candidate):
+			return candidate
+	return base + "X"
+
 static func build_leagues() -> Array:
 	var out: Array = []
 	for def in LEAGUE_DEFS:
@@ -155,9 +265,10 @@ func add_missing_clubs(world: Dictionary) -> void:
 
 ## Lädt die feste Spielerdatenbank (data/players.json), gruppiert nach Verein.
 func _load_players_db() -> Dictionary:
-	if not FileAccess.file_exists("res://data/players.json"):
+	var path := data_file("players.json")
+	if not FileAccess.file_exists(path):
 		return {}
-	var data: Variant = _load_json("res://data/players.json")
+	var data: Variant = _load_json(path)
 	if not (data is Dictionary) or not data.has("players"):
 		return {}
 	var by_club := {}

@@ -87,7 +87,7 @@ func _check_lower_league_migration() -> void:
 	f.close()
 
 	assert(Game.load_game(path), "Alter Zwei-Ligen-Spielstand muss ladbar sein")
-	assert(Game.world.leagues.size() == 8, "Nach der Migration muessen 8 Ligen existieren")
+	assert(Game.world.leagues.size() == 9, "Nach der Migration muessen 8 Ligen plus Oberliga existieren")
 	for cid in Game.world.clubs:
 		var club: ClubData = Game.world.clubs[cid]
 		assert(ClubData.LAENDER.has(club.land), "%s ohne Bundesland nach der Migration" % club.name)
@@ -160,7 +160,7 @@ func _check_regional_split_migration() -> void:
 	print("Spielstand mit EINER Regionalliga geschrieben (%d Vereine)" % data.world.clubs.size())
 
 	assert(Game.load_game(path), "Spielstand mit einer Regionalliga muss ladbar sein")
-	assert(Game.world.leagues.size() == 8, "Die Staffeln wurden nicht angelegt")
+	assert(Game.world.leagues.size() == 9, "Die Staffeln wurden nicht angelegt")
 	assert(Game.world.clubs.size() == 146, "Es fehlen Vereine: %d" % Game.world.clubs.size())
 	var total := 0
 	for lid in Data.REGIONAL_LEAGUES:
