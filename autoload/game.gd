@@ -1189,29 +1189,63 @@ func _promote_from_regional(tables: Dictionary, moves: Dictionary, playoffs: Arr
 	_add_news("relegation", "Aufstiegsrelegation: %s gegen %s %d:%d – %s steigt in die Dritte Liga auf." % [
 		a.name, b.name, int(result.total_a), int(result.total_b), str(result.winner)])
 
-## Absteiger aus der Dritten Liga auf die Staffeln verteilen. Ziel ist die
-## Staffel, die gerade einen Verein nach oben abgegeben hat – so bleiben alle
-## fünf Staffeln dauerhaft gleich groß.
+## Absteiger aus der Dritten Liga auf die Staffeln verteilen – nach dem
+## BUNDESLAND des Vereins, genau wie im echten Spielbetrieb. Frei werden je
+## Saison vier Plätze (in den Staffeln, deren Meister aufgestiegen ist).
+##
+## Steigen zwei Vereine aus demselben Bundesland ab, passt nur einer in seine
+## Heimatstaffel. Dann greift die Ausweichregel: Der Verein kommt in die
+## nächstgelegene Staffel mit freiem Platz (ClubData.STAFFEL_NEIGHBOURS). So
+## behalten alle fünf Staffeln dauerhaft ihre 18 Vereine.
 func _spread_relegated_to_staffeln(moves: Dictionary) -> void:
-	var sizes := {}
+	var free := {}
 	for lid in Data.REGIONAL_LEAGUES:
 		if world.leagues.has(lid):
-			sizes[lid] = world.leagues[lid].club_ids.size()
-	if sizes.is_empty():
+			free[lid] = 0
+	if free.is_empty():
 		return
+	# Jeder Aufsteiger macht in seiner Staffel einen Platz frei
 	for cid in moves:
 		var from_lid: int = club(cid).league_id
-		if sizes.has(from_lid):
-			sizes[from_lid] -= 1
+		if free.has(from_lid):
+			free[from_lid] += 1
+
+	var pending: Array = []
 	for cid in moves:
-		if club(cid).league_id != 3 or int(moves[cid]) < 4:
-			continue
-		var target: int = -1
-		for lid in sizes:
-			if target < 0 or int(sizes[lid]) < int(sizes[target]):
+		if club(cid).league_id == 3 and int(moves[cid]) >= 4:
+			pending.append(cid)
+	# Erster Durchgang: Wer in seine Heimatstaffel passt, kommt dorthin
+	var leftover: Array = []
+	for cid in pending:
+		var home: int = club(cid).home_staffel()
+		if int(free.get(home, 0)) > 0:
+			moves[cid] = home
+			free[home] -= 1
+		else:
+			leftover.append(cid)
+	# Zweiter Durchgang: Ausweichen in die nächstgelegene Staffel mit Platz
+	for cid in leftover:
+		var c := club(cid)
+		var target := -1
+		for lid in ClubData.STAFFEL_NEIGHBOURS.get(c.home_staffel(), []):
+			if int(free.get(lid, 0)) > 0:
 				target = lid
+				break
+		if target < 0:
+			# Notfall: irgendeine Staffel mit Platz, sonst die kleinste
+			for lid in free:
+				if int(free[lid]) > 0:
+					target = lid
+					break
+		if target < 0:
+			target = c.home_staffel()
+		else:
+			free[target] -= 1
 		moves[cid] = target
-		sizes[target] += 1
+		if target != c.home_staffel():
+			_add_news("liga", "%s (%s) steigt in die %s ab – in der %s war kein Platz frei." % [
+				c.name, c.land_name(), world.leagues[target].name,
+				world.leagues[c.home_staffel()].name])
 
 ## Zwei Spiele mit Gesamtstand: Verein A hat im RÜCKSPIEL Heimrecht, Verein B
 ## im Hinspiel. Steht es nach beiden Partien gleich, folgen im Rückspiel
@@ -1597,6 +1631,7 @@ func load_game(path: String) -> bool:
 	if not data.world.has("retired"):
 		_migrate_economy_v012()
 	_migrate_lower_leagues_v031()
+	_migrate_bundeslaender()
 	# Startaufstellungen slot-treu ausrichten (Spielstände vor dem Slot-System
 	# haben eine ungeordnete Elf – die Engine bewertet seitdem pro Formations-Slot)
 	for cid in world.clubs:
@@ -1673,6 +1708,22 @@ func _migrate_lower_leagues_v031() -> void:
 	# Der Spielplan der oberen Ligen liegt jetzt auf dem 38er-Raster
 	_remap_upper_league_rounds()
 	_add_news("liga", "Der Ligaunterbau wurde erweitert: Dritte Liga und Regionalliga sind ab sofort dabei.")
+
+## Spielstände ohne Bundesland (vor v0.33.0) bekommen es aus den Stammdaten
+## nachgetragen – ohne das würde jeder Absteiger in der Staffel Nord landen.
+func _migrate_bundeslaender() -> void:
+	var by_id := {}
+	for i in Data.club_defs.size():
+		var def: Dictionary = Data.club_defs[i]
+		by_id[int(def.get("id", i + 1))] = str(def.get("land", ""))
+	var filled := 0
+	for cid in world.clubs:
+		var c: ClubData = world.clubs[cid]
+		if c.land == "" and by_id.has(cid):
+			c.land = str(by_id[cid])
+			filled += 1
+	if filled > 0:
+		print("Bundesländer nachgetragen: %d Vereine" % filled)
 
 ## Alte Spielstände hatten 34 fortlaufende Spieltage. Im neuen Kalender liegen
 ## die 18er-Ligen auf den 34 Samstagsterminen des 38er-Rasters.

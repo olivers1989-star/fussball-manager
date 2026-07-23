@@ -79,8 +79,18 @@ func _check_lower_league_migration() -> void:
 	print("Zwei-Ligen-Spielstand geschrieben (%d Vereine, Spieltag %d)" % [
 		data.world.clubs.size(), int(data.world.matchday) + 1])
 
+	# Bundesländer entfernen: Der Spielstand muss sie beim Laden nachtragen
+	for cid in data.world.clubs:
+		data.world.clubs[cid].erase("land")
+	f = FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(data))
+	f.close()
+
 	assert(Game.load_game(path), "Alter Zwei-Ligen-Spielstand muss ladbar sein")
 	assert(Game.world.leagues.size() == 8, "Nach der Migration muessen 8 Ligen existieren")
+	for cid in Game.world.clubs:
+		var club: ClubData = Game.world.clubs[cid]
+		assert(ClubData.LAENDER.has(club.land), "%s ohne Bundesland nach der Migration" % club.name)
 	assert(Game.world.clubs.size() == 146, "Es fehlen Vereine: %d" % Game.world.clubs.size())
 	assert(not Game.league(4).playable, "Die Regionalliga darf nicht spielbar sein")
 	assert(Game.league(8).club_ids.size() == 18, "Die fuenfte Staffel fehlt")

@@ -141,6 +141,20 @@ static func club_badge(short_name: String, club_color: Color, size := 46) -> Lab
 	l.add_theme_color_override("font_color", Color.WHITE if club_color.get_luminance() < 0.55 else Color("#111827"))
 	return l
 
+## Wappen eines Vereins: echtes Logo, wenn unter data/logos/<Vereins-ID>.png
+## eines hinterlegt ist – sonst der gezeichnete Farbkreis mit dem Kürzel.
+## Die Vereins-ID ist stabil, damit Logos zugeordnet bleiben.
+static func club_logo(club: ClubData, size := 46) -> Control:
+	if not club.has_logo():
+		return club_badge(club.short_name, Color(club.color), size)
+	var icon := TextureRect.new()
+	icon.texture = load(club.logo_path())
+	icon.custom_minimum_size = Vector2(size, size)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.tooltip_text = club.name
+	return icon
+
 ## Prominenter Aktions-Button (grün).
 static func make_primary(button: Button) -> void:
 	var normal := box(Color("#16a34a"), 10)

@@ -52,10 +52,11 @@ func generate_world() -> Dictionary:
 	for i in club_defs.size():
 		var def: Dictionary = club_defs[i]
 		var c := ClubData.new()
-		c.id = i + 1
+		c.id = int(def.get("id", i + 1))
 		c.name = def.name
 		c.short_name = def.short
 		c.city = def.city
+		c.land = str(def.get("land", ""))
 		c.stadium = def.stadium
 		c.capacity = int(def.capacity)
 		c.color = def.color
@@ -119,15 +120,16 @@ func add_missing_clubs(world: Dictionary) -> void:
 	var db_players := _load_players_db()
 	var sponsor_pool := sponsors.duplicate()
 	for i in club_defs.size():
-		var club_id := i + 1
+		var def: Dictionary = club_defs[i]
+		var club_id := int(def.get("id", i + 1))
 		if world.clubs.has(club_id):
 			continue
-		var def: Dictionary = club_defs[i]
 		var c := ClubData.new()
 		c.id = club_id
 		c.name = def.name
 		c.short_name = def.short
 		c.city = def.city
+		c.land = str(def.get("land", ""))
 		c.stadium = def.stadium
 		c.capacity = int(def.capacity)
 		c.color = def.color

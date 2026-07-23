@@ -1,0 +1,17 @@
+Vereinslogos
+============
+
+Hier können Logos für die Vereine abgelegt werden. Der Dateiname ist die
+STABILE VEREINS-ID aus data/clubs.json (Feld "id"), zum Beispiel:
+
+    1.png    ->  FC Bavaria München
+    19.png   ->  FC Knappen Gelsenkirchen 04
+
+Format: PNG, quadratisch, am besten 128x128 Pixel mit transparentem Hintergrund.
+
+Liegt für einen Verein kein Logo vor, zeichnet das Spiel weiterhin den
+farbigen Kreis mit dem Vereinskürzel – es muss also nicht für jeden Verein
+eines vorhanden sein.
+
+Die ID bleibt erhalten, wenn Vereine umbenannt, verschoben oder ergänzt werden.
+Neue Vereine bekommen eine ID, die noch nicht vergeben ist.

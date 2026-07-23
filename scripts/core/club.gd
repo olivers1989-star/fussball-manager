@@ -82,6 +82,55 @@ var budget: int = 5000000
 var sponsor_name: String = ""
 var sponsor_per_md: int = 50000
 var chairman: String = ""      # Vorstandsvorsitzender (fest je Verein, aus clubs.json)
+var land: String = ""          # Bundesland-Kürzel, bestimmt die Regionalliga-Staffel
+
+## Die 16 Bundesländer – in clubs.json als Feld "land" editierbar.
+const LAENDER := {
+	"BW": "Baden-Württemberg", "BY": "Bayern", "BE": "Berlin", "BB": "Brandenburg",
+	"HB": "Bremen", "HH": "Hamburg", "HE": "Hessen", "MV": "Mecklenburg-Vorpommern",
+	"NI": "Niedersachsen", "NW": "Nordrhein-Westfalen", "RP": "Rheinland-Pfalz",
+	"SL": "Saarland", "SN": "Sachsen", "ST": "Sachsen-Anhalt", "SH": "Schleswig-Holstein",
+	"TH": "Thüringen",
+}
+
+## Welche Regionalliga-Staffel ist für ein Bundesland zuständig? Aufteilung wie
+## im echten Spielbetrieb: West = NRW, Bayern = Bayern, Nord = NI/SH/HB/HH,
+## Nordost = BE/BB/MV/SN/ST/TH, Südwest = BW/HE/RP/SL.
+const STAFFEL_OF_LAND := {
+	"NI": 4, "SH": 4, "HB": 4, "HH": 4,
+	"BE": 5, "BB": 5, "MV": 5, "SN": 5, "ST": 5, "TH": 5,
+	"NW": 6,
+	"BW": 7, "HE": 7, "RP": 7, "SL": 7,
+	"BY": 8,
+}
+
+## Ausweichreihenfolge, wenn die eigene Staffel keinen Platz mehr frei hat –
+## nach geografischer Nähe.
+const STAFFEL_NEIGHBOURS := {
+	4: [5, 6, 7, 8],
+	5: [4, 7, 6, 8],
+	6: [4, 7, 5, 8],
+	7: [6, 8, 5, 4],
+	8: [7, 5, 6, 4],
+}
+
+static func staffel_for_land(p_land: String) -> int:
+	return int(STAFFEL_OF_LAND.get(p_land, 4))
+
+func land_name() -> String:
+	return str(LAENDER.get(land, ""))
+
+## Die zuständige Regionalliga-Staffel dieses Vereins.
+func home_staffel() -> int:
+	return staffel_for_land(land)
+
+## Pfad zum Vereinslogo. Die Vereins-ID ist stabil (steht in clubs.json), damit
+## Logos zugeordnet bleiben, auch wenn Vereine ergänzt oder umbenannt werden.
+func logo_path() -> String:
+	return "res://data/logos/%d.png" % id
+
+func has_logo() -> bool:
+	return ResourceLoader.exists(logo_path())
 ## Bankgröße in Liga 1 und 2 (später über eine Ligen-Basis editierbar).
 const BENCH_SIZE := 7
 
@@ -348,7 +397,7 @@ func squad_strength(all_players: Dictionary) -> float:
 
 func to_dict() -> Dictionary:
 	return {
-		"id": id, "name": name, "short": short_name, "city": city,
+		"id": id, "name": name, "short": short_name, "city": city, "land": land,
 		"stadium": stadium, "cap": capacity, "color": color, "base": base_strength,
 		"league": league_id, "budget": budget, "sponsor": sponsor_name,
 		"sponsor_md": sponsor_per_md, "chairman": chairman, "formation": formation,
@@ -362,6 +411,7 @@ static func from_dict(d: Dictionary) -> ClubData:
 	c.name = d.name
 	c.short_name = d.short
 	c.city = d.city
+	c.land = str(d.get("land", ""))
 	c.stadium = d.stadium
 	c.capacity = int(d.cap)
 	c.color = d.color
