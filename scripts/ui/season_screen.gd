@@ -139,11 +139,12 @@ func _build_head() -> PanelContainer:
 	goal.add_theme_color_override("font_color", UITheme.ACCENT if achieved else UITheme.DANGER)
 	mine_texts.add_child(goal)
 
-	# Die beiden Meister
+	# Die Meister der spielbaren Ligen – die fünf Staffelmeister der
+	# Regionalliga stehen in der Seitenspalte, sonst platzt die Kopfzeile
 	var tables: Array = _s.get("tables", [])
 	for t in tables:
 		var rows: Array = t.get("rows", [])
-		if rows.is_empty():
+		if rows.is_empty() or not bool(t.get("playable", true)):
 			continue
 		row.add_child(_champion_card(str(t.league), rows[0]))
 	return card
@@ -203,7 +204,8 @@ func _build_tables_card() -> PanelContainer:
 		var b := Button.new()
 		b.text = str(t.league)
 		if not bool(t.get("playable", true)):
-			b.text += " (Unterbau)"
+			b.text = str(t.league).replace("Regionalliga ", "RL ")
+			b.tooltip_text = "%s – Unterbau" % str(t.league)
 		b.toggle_mode = true
 		b.button_group = group
 		b.focus_mode = Control.FOCUS_NONE
@@ -314,25 +316,28 @@ func _table_row(row: Dictionary) -> PanelContainer:
 
 # ------------------------------------------------------------------ Seitenspalte
 
+## Rechte Spalte: Staffelmeister, Relegation, Bewegungen und Spielerlisten –
+## alles zusammen in EINEM Scrollbereich, sonst passt es nicht auf den Schirm.
 func _build_side_column() -> Control:
+	var outer := ScrollContainer.new()
+	outer.custom_minimum_size = Vector2(446, 0)
+	outer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
-	col.custom_minimum_size = Vector2(430, 0)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	outer.add_child(col)
 
+	col.add_child(_regional_card())
 	col.add_child(_movement_card())
 
 	var card := _card("🥅 Torjäger, Noten & dein Kader")
-	card.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(card)
 	var box: VBoxContainer = card.get_child(0)
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(scroll)
 	var inner := VBoxContainer.new()
 	inner.add_theme_constant_override("separation", 3)
 	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(inner)
+	box.add_child(inner)
 
 	inner.add_child(_group_header("TORJÄGERLISTE"))
 	var scorers: Array = _s.get("scorers", [])
@@ -376,7 +381,62 @@ func _build_side_column() -> Control:
 		inner.add_child(_group_header("AUS DEINER JUGEND AUFGERÜCKT"))
 		for entry in youth:
 			inner.add_child(_note("🌱  %s" % str(entry)))
-	return col
+	return outer
+
+## Die fünf Staffelmeister der Regionalliga – drei steigen direkt auf, die
+## beiden übrigen spielen die Aufstiegsrelegation.
+func _regional_card() -> PanelContainer:
+	var card := _card("🌱 Meister der Regionalliga-Staffeln")
+	var box: VBoxContainer = card.get_child(0)
+	var promoted := {}
+	for m in _s.get("movements", []):
+		if str(m.league) == "Dritte Liga":
+			for name in m.get("up", []):
+				promoted[str(name)] = true
+	for t in _s.get("tables", []):
+		if bool(t.get("playable", true)):
+			continue
+		var rows: Array = t.get("rows", [])
+		if rows.is_empty():
+			continue
+		var top: Dictionary = rows[0]
+		var up: bool = promoted.has(str(top.name))
+		var row := PanelContainer.new()
+		var sb := UITheme.box(Color(0.10, 0.16, 0.12, 1.0) if up else Color(0.06, 0.09, 0.13, 1.0), 4)
+		sb.set_content_margin_all(3)
+		row.add_theme_stylebox_override("panel", sb)
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 5)
+		row.add_child(line)
+		var staffel := Label.new()
+		staffel.text = str(t.league).replace("Regionalliga ", "")
+		staffel.custom_minimum_size = Vector2(66, 0)
+		staffel.add_theme_font_size_override("font_size", 11)
+		staffel.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		line.add_child(staffel)
+		line.add_child(UITheme.club_badge(str(top.short), Color(str(top.color)), 18))
+		var name_label := Label.new()
+		name_label.text = str(top.name)
+		name_label.clip_text = true
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_label.add_theme_font_size_override("font_size", 12)
+		line.add_child(name_label)
+		var pts := Label.new()
+		pts.text = "%d P." % int(top.points)
+		pts.custom_minimum_size = Vector2(44, 0)
+		pts.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		pts.add_theme_font_size_override("font_size", 12)
+		pts.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		line.add_child(pts)
+		var mark := Label.new()
+		mark.text = "⬆ auf" if up else "–"
+		mark.custom_minimum_size = Vector2(44, 0)
+		mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		mark.add_theme_font_size_override("font_size", 11)
+		mark.add_theme_color_override("font_color", MARK_COLORS.promoted if up else UITheme.TEXT_DIM)
+		line.add_child(mark)
+		box.add_child(row)
+	return card
 
 ## Relegationsspiele und die Bewegungen zwischen allen Ligen.
 func _movement_card() -> PanelContainer:
@@ -410,7 +470,8 @@ func _move_line(text: String, color: Color) -> Label:
 	l.add_theme_color_override("font_color", color)
 	return l
 
-## Ein Relegationsspiel mit Wappen, Ergebnis und ggf. Elfmeterschießen.
+## Ein Relegationsduell über zwei Spiele mit Gesamtstand, Verlängerung und
+## Elfmeterschießen.
 func _playoff_row(entry: Dictionary) -> PanelContainer:
 	var panel := PanelContainer.new()
 	var mine: bool = bool(entry.get("mine", false))
@@ -422,45 +483,64 @@ func _playoff_row(entry: Dictionary) -> PanelContainer:
 	panel.add_child(v)
 
 	var head := Label.new()
-	head.text = "⚖  Relegation zur %s" % str(entry.get("upper_league", ""))
+	head.text = "⚖  %s" % str(entry.get("title", "Relegation"))
 	head.add_theme_font_size_override("font_size", 11)
 	head.add_theme_color_override("font_color", MARK_COLORS.playoff_up)
 	v.add_child(head)
 
+	# Gesamtstand: A (Rückspiel-Heimrecht) links
 	var line := HBoxContainer.new()
 	line.add_theme_constant_override("separation", 5)
 	v.add_child(line)
-	var hn := Label.new()
-	hn.text = str(entry.home)
-	hn.clip_text = true
-	hn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hn.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	hn.add_theme_font_size_override("font_size", 12)
-	line.add_child(hn)
-	line.add_child(UITheme.club_badge(str(entry.home_short), Color(str(entry.home_color)), 20))
+	var an := Label.new()
+	an.text = str(entry.a)
+	an.clip_text = true
+	an.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	an.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	an.add_theme_font_size_override("font_size", 12)
+	line.add_child(an)
+	line.add_child(UITheme.club_badge(str(entry.a_short), Color(str(entry.a_color)), 20))
 	var score := Label.new()
-	score.text = "%d : %d" % [int(entry.hg), int(entry.ag)]
+	score.text = "%d : %d" % [int(entry.total_a), int(entry.total_b)]
 	score.custom_minimum_size = Vector2(48, 0)
 	score.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	score.add_theme_font_size_override("font_size", 14)
 	line.add_child(score)
-	line.add_child(UITheme.club_badge(str(entry.away_short), Color(str(entry.away_color)), 20))
-	var an := Label.new()
-	an.text = str(entry.away)
-	an.clip_text = true
-	an.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	an.add_theme_font_size_override("font_size", 12)
-	line.add_child(an)
+	line.add_child(UITheme.club_badge(str(entry.b_short), Color(str(entry.b_color)), 20))
+	var bn := Label.new()
+	bn.text = str(entry.b)
+	bn.clip_text = true
+	bn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bn.add_theme_font_size_override("font_size", 12)
+	line.add_child(bn)
+
+	# Beide Spiele einzeln – Hinspiel bei B, Rückspiel bei A
+	var legs := Label.new()
+	var leg_text := "Hinspiel %s %d:%d %s   ·   Rückspiel %s %d:%d %s" % [
+		str(entry.b_short), int(entry.leg1_b), int(entry.leg1_a), str(entry.a_short),
+		str(entry.a_short), int(entry.leg2_a), int(entry.leg2_b), str(entry.b_short)]
+	if bool(entry.get("extra_time", false)):
+		leg_text += "  (n. V.)"
+	legs.text = leg_text
+	legs.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	legs.add_theme_font_size_override("font_size", 11)
+	legs.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+	v.add_child(legs)
 
 	var result := Label.new()
-	var text := "%s %s" % [str(entry.winner),
-		"bleibt in der %s" % str(entry.upper_league) if bool(entry.keeper_stays) else "steigt auf"]
+	var relegation: bool = str(entry.get("kind", "")) == "relegation"
+	var text := ""
+	if relegation:
+		text = "%s %s" % [str(entry.winner), "hält die Klasse" if bool(entry.a_wins) else "steigt auf"]
+	else:
+		text = "%s steigt auf" % str(entry.winner)
 	if bool(entry.get("shootout", false)):
-		text += "   ·   Elfmeterschießen %d:%d" % [int(entry.pens_h), int(entry.pens_a)]
+		text += "   ·   Elfmeterschießen %d:%d" % [int(entry.pens_a), int(entry.pens_b)]
 	result.text = text
 	result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	result.add_theme_font_size_override("font_size", 12)
-	result.add_theme_color_override("font_color", UITheme.ACCENT if bool(entry.keeper_stays) else MARK_COLORS.promoted)
+	result.add_theme_color_override("font_color",
+		UITheme.ACCENT if (relegation and bool(entry.a_wins)) else MARK_COLORS.promoted)
 	v.add_child(result)
 	return panel
 

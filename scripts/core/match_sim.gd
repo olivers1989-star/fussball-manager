@@ -21,6 +21,8 @@ var fixture: Dictionary = {}
 var league_name := ""
 
 var minute := 0
+var full_time := 90        # 120 nach run_extra_time() (K.-o.-Spiele)
+var knockout := false      # K.-o.-Spiel: Abrechnung erst nach Verlängerung
 var hg := 0
 var ag := 0
 var events: Array = []      # {min, kind, text}
@@ -158,15 +160,37 @@ func tick() -> void:
 	_flow_commentary(rat_h, rat_a)
 	_maybe_card()
 
-	if minute >= 90:
+	if minute == 105:
+		_emit("info", "Seitenwechsel in der Verlängerung. Zwischenstand: %d:%d." % [hg, ag])
+
+	if minute >= full_time:
 		_emit("info", "Abpfiff! Endstand: %d:%d." % [hg, ag])
 		finished = true
-		_finalize()
+		# K.-o.-Spiele werden erst abgerechnet, wenn feststeht, ob noch eine
+		# Verlängerung folgt – sonst liefe die Abrechnung doppelt.
+		if not (knockout and full_time == 90):
+			_finalize()
 
 ## Spult das Spiel ohne Eingriffe bis zum Abpfiff durch (KI-Spiele, Schnellsimulation).
 func run_full() -> void:
 	while not finished:
 		tick()
+
+## Verlängerung: zweimal 15 Minuten dranhängen. Nur für K.-o.-Spiele – die
+## Spieler sind da schon platt, entsprechend zäh wird es.
+func run_extra_time() -> void:
+	if minute < 90:
+		return
+	full_time = 120
+	finished = false
+	_emit("info", "Es geht in die Verlängerung – zweimal 15 Minuten.")
+	while not finished:
+		tick()
+
+## Schlusspfiff eines K.-o.-Spiels ohne Verlängerung abrechnen.
+func finalize_now() -> void:
+	if finished and knockout and full_time == 90:
+		_finalize()
 
 ## Positions-Slots passend zur Aufstellung: frei positionierte Elf (Zonen der
 ## Feldpunkte) für die gespeicherte Aufstellung, sonst das Formations-Preset;
@@ -387,6 +411,8 @@ func _flow_commentary(rat_h: Dictionary, rat_a: Dictionary) -> void:
 	var attacking_home := _rng.randf() < home_edge
 	var club: ClubData = home if attacking_home else away
 	var lineup: Array = lineup_h if attacking_home else lineup_a
+	if lineup.size() < 2:
+		return   # Rumpfelf (viele Ausfälle): kein Feldspieler für den Kommentar
 	var p: PlayerData = players[lineup[_rng.randi_range(1, lineup.size() - 1)]]
 	var trailing: bool = (hg < ag) if attacking_home else (ag < hg)
 	var pool: Array

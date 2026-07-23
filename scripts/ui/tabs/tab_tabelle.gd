@@ -23,10 +23,9 @@ func _init() -> void:
 	for def in Data.LEAGUE_DEFS:
 		var league_id := int(def.id)
 		var b := Button.new()
-		b.text = str(def.name)
+		b.text = str(def.short) if not bool(def.playable) else str(def.name)
 		if not bool(def.playable):
-			b.text += "  (Unterbau)"
-			b.tooltip_text = "Nicht spielbar – läuft nur mit, damit Vereine in die Dritte Liga aufsteigen können."
+			b.tooltip_text = "%s – Unterbau, nicht spielbar. Die fünf Staffelmeister spielen den Aufstieg in die Dritte Liga aus." % str(def.name)
 		b.toggle_mode = true
 		b.button_group = group
 		b.set_pressed_no_signal(league_id == 1)

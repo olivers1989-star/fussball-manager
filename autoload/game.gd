@@ -864,9 +864,9 @@ func end_season() -> Dictionary:
 		tables[lid] = world.leagues[lid].table()
 
 	var display_tables: Array = []
-	for lid in [1, 2, 3, 4]:
-		if world.leagues.has(lid):
-			display_tables.append(_final_table(world.leagues[lid], tables[lid]))
+	for def in Data.LEAGUE_DEFS:
+		if world.leagues.has(int(def.id)):
+			display_tables.append(_final_table(world.leagues[int(def.id)], tables[int(def.id)]))
 
 	var summary := {
 		"season": season_label(),
@@ -985,11 +985,18 @@ func end_season() -> Dictionary:
 ## up_playoff  = 1, wenn der Platz danach in die Relegation muss
 ## down_direct = direkte Abstiegsplätze von unten
 ## down_playoff= 1, wenn der Platz darüber in die Relegation muss
+## Die fünf Regionalliga-Staffeln spielen um vier Plätze in der Dritten Liga:
+## Die drei besten Staffelmeister steigen direkt auf, die beiden übrigen
+## ermitteln den vierten Aufsteiger in der Aufstiegsrelegation.
 const LEAGUE_RULES := {
 	1: {"up_direct": 0, "up_playoff": 0, "down_direct": 2, "down_playoff": 1},
 	2: {"up_direct": 2, "up_playoff": 1, "down_direct": 2, "down_playoff": 1},
 	3: {"up_direct": 2, "up_playoff": 1, "down_direct": 4, "down_playoff": 0},
-	4: {"up_direct": 4, "up_playoff": 0, "down_direct": 0, "down_playoff": 0},
+	4: {"up_direct": 0, "up_playoff": 1, "down_direct": 0, "down_playoff": 0},
+	5: {"up_direct": 0, "up_playoff": 1, "down_direct": 0, "down_playoff": 0},
+	6: {"up_direct": 0, "up_playoff": 1, "down_direct": 0, "down_playoff": 0},
+	7: {"up_direct": 0, "up_playoff": 1, "down_direct": 0, "down_playoff": 0},
+	8: {"up_direct": 0, "up_playoff": 1, "down_direct": 0, "down_playoff": 0},
 }
 
 ## Abschlusstabelle einer Liga als reine Anzeigedaten, Markierungen aus den
@@ -1075,13 +1082,13 @@ func _season_best_rated() -> Array:
 ## ersten Nichtabstiegsplatz oben und dem ersten Nichtaufstiegsplatz unten.
 ## Die Zusammenfassung bekommt Bewegungen und Relegationsergebnisse.
 func _apply_promotion_and_relegation(tables: Dictionary, summary: Dictionary) -> void:
-	var moves := {}          # club_id -> neue Liga
+	var moves := {}          # club_id -> neue Liga (4 = "irgendeine Staffel")
 	var playoffs: Array = []
 
-	for lid in [1, 2, 3, 4]:
-		if not world.leagues.has(lid):
+	for lid in world.leagues:
+		var rules: Dictionary = LEAGUE_RULES.get(lid, {})
+		if rules.is_empty():
 			continue
-		var rules: Dictionary = LEAGUE_RULES[lid]
 		var rows: Array = tables[lid]
 		for i in int(rules.up_direct):
 			moves[int(rows[i].club_id)] = lid - 1
@@ -1089,29 +1096,30 @@ func _apply_promotion_and_relegation(tables: Dictionary, summary: Dictionary) ->
 			moves[int(rows[rows.size() - 1 - i].club_id)] = lid + 1
 
 	# Relegation: Der bedrohte Verein der oberen Liga gegen den besten
-	# Nichtaufsteiger der unteren – ein Spiel beim Höherklassigen.
+	# Nichtaufsteiger der unteren – Hinspiel unten, Rückspiel oben.
 	for pair in [[1, 2], [2, 3]]:
 		var upper: int = pair[0]
 		var lower: int = pair[1]
 		if not (world.leagues.has(upper) and world.leagues.has(lower)):
 			continue
-		if int(LEAGUE_RULES[upper].down_playoff) == 0 or int(LEAGUE_RULES[lower].up_playoff) == 0:
-			continue
 		var upper_rows: Array = tables[upper]
 		var lower_rows: Array = tables[lower]
 		var keeper := club(int(upper_rows[upper_rows.size() - 1 - int(LEAGUE_RULES[upper].down_direct)].club_id))
 		var challenger := club(int(lower_rows[int(LEAGUE_RULES[lower].up_direct)].club_id))
-		var result := _play_relegation_match(keeper, challenger)
-		result["upper_league"] = world.leagues[upper].name
-		result["lower_league"] = world.leagues[lower].name
+		var result := _play_two_legs(keeper, challenger)
+		result["kind"] = "relegation"
+		result["title"] = "Relegation %s ↔ %s" % [world.leagues[upper].name, world.leagues[lower].name]
 		playoffs.append(result)
-		if not bool(result.keeper_stays):
+		if not bool(result.a_wins):
 			moves[keeper.id] = lower
 			moves[challenger.id] = upper
-		_add_news("relegation", "Relegation %s: %s %d:%d %s – %s %s." % [
-			world.leagues[upper].name, keeper.name, int(result.hg), int(result.ag), challenger.name,
-			(keeper.name if bool(result.keeper_stays) else challenger.name),
-			("bleibt oben" if bool(result.keeper_stays) else "steigt auf")])
+		_add_news("relegation", "Relegation %s: %s gegen %s %d:%d nach zwei Spielen – %s %s." % [
+			world.leagues[upper].name, keeper.name, challenger.name,
+			int(result.total_a), int(result.total_b), str(result.winner),
+			("bleibt oben" if bool(result.a_wins) else "steigt auf")])
+
+	_promote_from_regional(tables, moves, playoffs)
+	_spread_relegated_to_staffeln(moves)
 
 	# Bewegungen anwenden und alle Ligen neu besetzen
 	var movements := {}
@@ -1132,37 +1140,134 @@ func _apply_promotion_and_relegation(tables: Dictionary, summary: Dictionary) ->
 		world.leagues[world.clubs[cid].league_id].club_ids.append(cid)
 
 	summary["movements"] = []
-	for lid in [1, 2, 3, 4]:
-		if movements.has(lid):
+	for def in Data.LEAGUE_DEFS:
+		var lid := int(def.id)
+		if movements.has(lid) and not (movements[lid].up.is_empty() and movements[lid].down.is_empty()):
 			summary.movements.append(movements[lid])
 	summary["playoffs"] = playoffs
 	# Für Übersicht und Tests: Wer ist neu in der Ersten Liga, wer musste raus?
 	summary["promoted"] = movements[1].up if movements.has(1) else []
 	summary["relegated"] = movements[1].down if movements.has(1) else []
 
-## Ein Relegationsspiel beim höherklassigen Verein. Unentschieden entscheidet
-## das Elfmeterschießen.
-func _play_relegation_match(keeper: ClubData, challenger: ClubData) -> Dictionary:
-	for c in [keeper, challenger]:
+## Aufstieg aus der Regionalliga: Die fünf Staffelmeister werden verglichen.
+## Die drei besten steigen direkt auf, die beiden übrigen spielen in der
+## Aufstiegsrelegation den vierten Platz in der Dritten Liga aus.
+func _promote_from_regional(tables: Dictionary, moves: Dictionary, playoffs: Array) -> void:
+	var champions: Array = []
+	for lid in Data.REGIONAL_LEAGUES:
+		if not world.leagues.has(lid):
+			continue
+		var rows: Array = tables[lid]
+		if rows.is_empty():
+			continue
+		champions.append({"lid": lid, "row": rows[0], "club_id": int(rows[0].club_id)})
+	champions.sort_custom(func(x, y):
+		if int(x.row.points) != int(y.row.points):
+			return int(x.row.points) > int(y.row.points)
+		var dx: int = int(x.row.gf) - int(x.row.ga)
+		var dy: int = int(y.row.gf) - int(y.row.ga)
+		if dx != dy:
+			return dx > dy
+		return int(x.row.gf) > int(y.row.gf))
+
+	for i in mini(3, champions.size()):
+		moves[int(champions[i].club_id)] = 3
+		_add_news("liga", "%s ist Meister der %s und steigt direkt in die Dritte Liga auf." % [
+			club(int(champions[i].club_id)).name, world.leagues[int(champions[i].lid)].name])
+	if champions.size() < 5:
+		# Weniger als fünf Staffeln (alte Spielstände): dann rückt der Vierte nach
+		if champions.size() >= 4:
+			moves[int(champions[3].club_id)] = 3
+		return
+	var a := club(int(champions[3].club_id))
+	var b := club(int(champions[4].club_id))
+	var result := _play_two_legs(a, b)
+	result["kind"] = "aufstiegsrunde"
+	result["title"] = "Aufstiegsrelegation zur Dritten Liga"
+	playoffs.append(result)
+	moves[a.id if bool(result.a_wins) else b.id] = 3
+	_add_news("relegation", "Aufstiegsrelegation: %s gegen %s %d:%d – %s steigt in die Dritte Liga auf." % [
+		a.name, b.name, int(result.total_a), int(result.total_b), str(result.winner)])
+
+## Absteiger aus der Dritten Liga auf die Staffeln verteilen. Ziel ist die
+## Staffel, die gerade einen Verein nach oben abgegeben hat – so bleiben alle
+## fünf Staffeln dauerhaft gleich groß.
+func _spread_relegated_to_staffeln(moves: Dictionary) -> void:
+	var sizes := {}
+	for lid in Data.REGIONAL_LEAGUES:
+		if world.leagues.has(lid):
+			sizes[lid] = world.leagues[lid].club_ids.size()
+	if sizes.is_empty():
+		return
+	for cid in moves:
+		var from_lid: int = club(cid).league_id
+		if sizes.has(from_lid):
+			sizes[from_lid] -= 1
+	for cid in moves:
+		if club(cid).league_id != 3 or int(moves[cid]) < 4:
+			continue
+		var target: int = -1
+		for lid in sizes:
+			if target < 0 or int(sizes[lid]) < int(sizes[target]):
+				target = lid
+		moves[cid] = target
+		sizes[target] += 1
+
+## Zwei Spiele mit Gesamtstand: Verein A hat im RÜCKSPIEL Heimrecht, Verein B
+## im Hinspiel. Steht es nach beiden Partien gleich, folgen im Rückspiel
+## zweimal 15 Minuten Verlängerung und danach das Elfmeterschießen. Es gibt
+## KEINE Auswärtstorregel.
+func _play_two_legs(a: ClubData, b: ClubData) -> Dictionary:
+	for c in [a, b]:
 		c.formation = c.pick_best_formation(world.players)
 		c.lineup = c.best_eleven(world.players)
 		c.lineup_spots = []
+
+	var first := _knockout_leg(b, a)     # Hinspiel bei B
+	first.run_full()
+	first.finalize_now()
+	var second := _knockout_leg(a, b)    # Rückspiel bei A
+	second.run_full()
+
+	var total_a: int = first.ag + second.hg
+	var total_b: int = first.hg + second.ag
+	# Gesamtstand nach den regulären 2×90 Minuten – danach kann die
+	# Verlängerung ihn noch verändern
+	var reg_a := total_a
+	var reg_b := total_b
+	var extra := false
+	var pens := [0, 0]
+	if total_a == total_b:
+		extra = true
+		second.run_extra_time()
+		total_a = first.ag + second.hg
+		total_b = first.hg + second.ag
+		if total_a == total_b:
+			pens = _penalty_shootout(a, b)
+	else:
+		second.finalize_now()
+
+	var a_wins: bool = total_a > total_b or (total_a == total_b and pens[0] > pens[1])
+	return {
+		"a": a.name, "a_short": a.short_name, "a_color": a.color,
+		"b": b.name, "b_short": b.short_name, "b_color": b.color,
+		# Hinspiel bei B, Rückspiel bei A
+		"leg1_b": first.hg, "leg1_a": first.ag,
+		"leg2_a": second.hg, "leg2_b": second.ag,
+		"total_a": total_a, "total_b": total_b,
+		"reg_a": reg_a, "reg_b": reg_b,
+		"extra_time": extra, "shootout": pens[0] + pens[1] > 0,
+		"pens_a": pens[0], "pens_b": pens[1],
+		"a_wins": a_wins, "winner": a.name if a_wins else b.name,
+		"mine": a.id == my_club_id or b.id == my_club_id,
+	}
+
+func _knockout_leg(home_club: ClubData, away_club: ClubData) -> MatchSim:
 	var sim := MatchSim.new()
 	sim.is_friendly = true   # zählt nicht für Saisonstatistik und Sperren
-	sim.setup(keeper, challenger, world.players)
-	sim.run_full()
-	var pens := [0, 0]
-	if sim.hg == sim.ag:
-		pens = _penalty_shootout(keeper, challenger)
-	var keeper_stays: bool = sim.hg > sim.ag or (sim.hg == sim.ag and pens[0] > pens[1])
-	return {
-		"home": keeper.name, "home_short": keeper.short_name, "home_color": keeper.color,
-		"away": challenger.name, "away_short": challenger.short_name, "away_color": challenger.color,
-		"hg": sim.hg, "ag": sim.ag, "pens_h": pens[0], "pens_a": pens[1],
-		"shootout": sim.hg == sim.ag, "keeper_stays": keeper_stays,
-		"winner": keeper.name if keeper_stays else challenger.name,
-		"mine": keeper.id == my_club_id or challenger.id == my_club_id,
-	}
+	sim.knockout = true
+	sim.setup(home_club, away_club, world.players)
+	return sim
 
 ## Elfmeterschießen: Abschluss und Nervenstärke der Schützen gegen die Reflexe
 ## des Torhüters – fünf Schüsse, dann Sudden Death.
@@ -1525,10 +1630,31 @@ func _migrate_lower_leagues_v031() -> void:
 	for lg in Data.build_leagues():
 		if world.leagues.has(lg.id):
 			# Namen und Spielbarkeit aktualisieren, Bestand bleibt
+			world.leagues[lg.id].name = lg.name
 			world.leagues[lg.id].short_name = lg.short_name
 			world.leagues[lg.id].playable = lg.playable
 			continue
 		world.leagues[lg.id] = lg
+	# Spielstände mit EINER Regionalliga (v0.31.0): Die Vereine wandern in die
+	# Staffel, die ihnen in den Stammdaten zugewiesen ist.
+	var regional_split := false
+	for cid in world.clubs:
+		var c: ClubData = world.clubs[cid]
+		if c.league_id != 4 or cid > Data.club_defs.size():
+			continue
+		var target := int(Data.club_defs[cid - 1].league)
+		if target != 4:
+			c.league_id = target
+			regional_split = true
+	if regional_split:
+		for lid in Data.REGIONAL_LEAGUES:
+			if world.leagues.has(lid):
+				world.leagues[lid].club_ids.clear()
+		for cid in world.clubs:
+			var lid: int = world.clubs[cid].league_id
+			if Data.REGIONAL_LEAGUES.has(lid):
+				world.leagues[lid].club_ids.append(cid)
+		missing = Data.REGIONAL_LEAGUES.duplicate()
 	Data.add_missing_clubs(world)
 	for lid in missing:
 		var lg: LeagueData = world.leagues[lid]

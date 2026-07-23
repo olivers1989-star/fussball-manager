@@ -35,11 +35,11 @@ func _ready() -> void:
 	print("Attribut-Check OK (TW-Reflexe %d, ST-Abschluss %d)" % [tw_sample.attr("reflexe"), st_sample.attr("abschluss")])
 	var world: Dictionary = Game.world
 	print("Spieler: %d, Vereine: %d, Ligen: %d" % [world.players.size(), world.clubs.size(), world.leagues.size()])
-	assert(world.clubs.size() == 76)
-	assert(world.leagues.size() == 4)
+	assert(world.clubs.size() == 146)
+	assert(world.leagues.size() == 8)
 	assert(Game.league(1).fixtures.size() == 306)   # 18 Vereine
 	assert(Game.league(3).fixtures.size() == 380)   # 20 Vereine
-	assert(not Game.league(4).playable)
+	assert(not Game.league(4).playable and not Game.league(8).playable)
 
 	# Kalender: Saison startet am 1. Juli (5 Wochen Vorbereitung), Spieltage samstags, Winterpause
 	assert(Game.date_dict().month == 7 and Game.date_dict().day == 1)
@@ -66,8 +66,8 @@ func _ready() -> void:
 			total_matches += 1
 	var goals_per_match := float(total_goals) / total_matches
 	print("Saison simuliert: %d Spiele, %.2f Tore/Spiel" % [total_matches, goals_per_match])
-	# 2×(34 Spieltage × 9 Partien) oben + 2×(38 × 10) unten
-	assert(total_matches == 34 * 18 + 38 * 20)
+	# Sieben 18er-Ligen (je 306 Partien) plus die Dritte Liga mit 20 Vereinen (380)
+	assert(total_matches == 306 * 7 + 380)
 	assert(goals_per_match > 1.8 and goals_per_match < 4.2)
 	assert(Game.season_over())
 
@@ -102,10 +102,13 @@ func _ready() -> void:
 	print("Saisonwechsel: Aufsteiger %s / Absteiger %s" % [", ".join(summary.promoted), ", ".join(summary.relegated)])
 	assert(summary.promoted.size() >= 2 and summary.relegated.size() >= 2)
 	assert(summary.promoted.size() == summary.relegated.size())
-	assert(summary.playoffs.size() == 2)
+	assert(summary.playoffs.size() == 3)   # 2 Relegationen + Aufstiegsrelegation
 	assert(Game.matchday() == 0)
 	assert(Game.league(1).club_ids.size() == 18 and Game.league(2).club_ids.size() == 18)
-	assert(Game.league(3).club_ids.size() == 20 and Game.league(4).club_ids.size() == 20)
+	assert(Game.league(3).club_ids.size() == 20)
+	for staffel in Data.REGIONAL_LEAGUES:
+		assert(Game.league(staffel).club_ids.size() == 18,
+			"%s hat %d Vereine" % [Game.league(staffel).name, Game.league(staffel).club_ids.size()])
 
 	var result2 := Game.play_matchday()
 	assert(not result2.mine.is_empty())

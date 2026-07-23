@@ -57,7 +57,7 @@ func _check_lower_league_migration() -> void:
 	# Auf den alten Stand zurückbauen: nur Liga 1 und 2, nur deren Vereine,
 	# fortlaufende Spieltage 0..33 statt des 38er-Rasters
 	var slots: Array = ScheduleGen.saturday_slots()
-	for lid in ["3", "4"]:
+	for lid in ["3", "4", "5", "6", "7", "8"]:
 		data.world.leagues.erase(lid)
 	var keep := {}
 	for lid in ["1", "2"]:
@@ -80,12 +80,14 @@ func _check_lower_league_migration() -> void:
 		data.world.clubs.size(), int(data.world.matchday) + 1])
 
 	assert(Game.load_game(path), "Alter Zwei-Ligen-Spielstand muss ladbar sein")
-	assert(Game.world.leagues.size() == 4, "Nach der Migration muessen 4 Ligen existieren")
-	assert(Game.world.clubs.size() == 76, "Es fehlen Vereine: %d" % Game.world.clubs.size())
+	assert(Game.world.leagues.size() == 8, "Nach der Migration muessen 8 Ligen existieren")
+	assert(Game.world.clubs.size() == 146, "Es fehlen Vereine: %d" % Game.world.clubs.size())
 	assert(not Game.league(4).playable, "Die Regionalliga darf nicht spielbar sein")
-	for lid in [3, 4]:
+	assert(Game.league(8).club_ids.size() == 18, "Die fuenfte Staffel fehlt")
+	for lid in [3, 4, 5, 6, 7, 8]:
 		var lg: LeagueData = Game.world.leagues[lid]
-		assert(lg.club_ids.size() == 20, "%s hat %d Vereine" % [lg.name, lg.club_ids.size()])
+		var want: int = 20 if lid == 3 else 18
+		assert(lg.club_ids.size() == want, "%s hat %d statt %d Vereine" % [lg.name, lg.club_ids.size(), want])
 		var played := 0
 		for fx in lg.fixtures:
 			if fx.played:
@@ -103,4 +105,61 @@ func _check_lower_league_migration() -> void:
 	assert(Game.league(1).table()[0].played >= before, "Saison laesst sich nach der Migration nicht fortsetzen")
 	print("Ligaunterbau ergaenzt: %d Vereine, Dritte Liga mit %d nachsimulierten Spieltagen" % [
 		Game.world.clubs.size(), Game.league(3).table()[0].played])
+	Game.delete_save(path)
+	_check_regional_split_migration()
+
+## Prüft die v0.32-Migration: Spielstände mit EINER Regionalliga (20 Vereine)
+## werden auf die fünf Staffeln aufgeteilt und aufgefüllt.
+func _check_regional_split_migration() -> void:
+	print("--- Regionalliga-Staffel-Migration ---")
+	Game.new_game(1)
+	for i in 4:
+		Game.play_matchday()
+	var name := Game.save_game("ZZMigrationStaffeln")
+	var path := "%s/%s.json" % [Game.SAVE_DIR, name]
+	var f := FileAccess.open(path, FileAccess.READ)
+	var data: Dictionary = JSON.parse_string(f.get_as_text())
+	f.close()
+
+	# Auf den Stand von v0.31 zurückbauen: eine Regionalliga mit 20 Vereinen,
+	# die Staffeln 5–8 gibt es noch nicht
+	var regional: Array = []
+	for lid in ["4", "5", "6", "7", "8"]:
+		if data.world.leagues.has(lid):
+			regional.append_array(data.world.leagues[lid].clubs)
+			data.world.leagues.erase(lid)
+	regional.sort()
+	var keep: Array = regional.slice(0, 20)
+	for cid in regional:
+		if keep.has(cid):
+			continue
+		data.world.clubs.erase(str(int(cid)))
+	for pid in data.world.players.keys():
+		var owner: int = int(data.world.players[pid].club)
+		if regional.has(owner) and not keep.has(owner):
+			data.world.players.erase(pid)
+	for cid in keep:
+		data.world.clubs[str(int(cid))].league = 4
+	data.world.leagues["4"] = {
+		"id": 4, "name": "Regionalliga", "short": "RL", "tier": 4, "playable": false,
+		"clubs": keep, "fixtures": [],
+	}
+	f = FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(data))
+	f.close()
+	print("Spielstand mit EINER Regionalliga geschrieben (%d Vereine)" % data.world.clubs.size())
+
+	assert(Game.load_game(path), "Spielstand mit einer Regionalliga muss ladbar sein")
+	assert(Game.world.leagues.size() == 8, "Die Staffeln wurden nicht angelegt")
+	assert(Game.world.clubs.size() == 146, "Es fehlen Vereine: %d" % Game.world.clubs.size())
+	var total := 0
+	for lid in Data.REGIONAL_LEAGUES:
+		var lg: LeagueData = Game.world.leagues[lid]
+		assert(lg.club_ids.size() == 18, "%s hat %d statt 18 Vereine" % [lg.name, lg.club_ids.size()])
+		assert(not lg.playable, "%s darf nicht spielbar sein" % lg.name)
+		assert(lg.fixtures.size() == 306, "%s hat %d Partien" % [lg.name, lg.fixtures.size()])
+		total += lg.club_ids.size()
+	assert(total == 90, "Der Regionalliga-Pool hat %d statt 90 Vereine" % total)
+	Game.play_matchday()
+	print("Regionalliga aufgeteilt: 5 Staffeln, %d Vereine im Pool" % total)
 	Game.delete_save(path)

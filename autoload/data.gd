@@ -90,8 +90,16 @@ const LEAGUE_DEFS := [
 	{"id": 1, "name": "Erste Liga", "short": "1. Liga", "tier": 1, "playable": true},
 	{"id": 2, "name": "Zweite Liga", "short": "2. Liga", "tier": 2, "playable": true},
 	{"id": 3, "name": "Dritte Liga", "short": "3. Liga", "tier": 3, "playable": true},
-	{"id": 4, "name": "Regionalliga", "short": "RL", "tier": 4, "playable": false},
+	# Die Regionalliga ist wie in der Realität in fünf Staffeln aufgeteilt
+	{"id": 4, "name": "Regionalliga Nord", "short": "RL Nord", "tier": 4, "playable": false},
+	{"id": 5, "name": "Regionalliga Nordost", "short": "RL Nordost", "tier": 4, "playable": false},
+	{"id": 6, "name": "Regionalliga West", "short": "RL West", "tier": 4, "playable": false},
+	{"id": 7, "name": "Regionalliga Südwest", "short": "RL Südwest", "tier": 4, "playable": false},
+	{"id": 8, "name": "Regionalliga Bayern", "short": "RL Bayern", "tier": 4, "playable": false},
 ]
+
+## Die Staffeln der Regionalliga (vierte Ebene).
+const REGIONAL_LEAGUES := [4, 5, 6, 7, 8]
 
 static func build_leagues() -> Array:
 	var out: Array = []

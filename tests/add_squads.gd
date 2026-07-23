@@ -4,6 +4,9 @@ extends Node
 ## die feste Datenbank soll sich für alte Vereine NICHT ändern.
 
 const PLAN := {"TW": 3, "IV": 4, "LV": 2, "RV": 2, "DM": 2, "ZM": 3, "LM": 1, "RM": 1, "OM": 2, "LA": 1, "RA": 1, "MS": 3}
+## Der Unterbau kommt mit schlankeren Kadern aus – 146 Vereine mit vollem Kader
+## wären unnötig viele Spieler. Die Mindestbesetzung je Position ist gewahrt.
+const PLAN_UNTERBAU := {"TW": 2, "IV": 3, "LV": 1, "RV": 1, "DM": 2, "ZM": 3, "LM": 1, "RM": 1, "OM": 1, "LA": 1, "RA": 1, "MS": 2}
 
 func _ready() -> void:
 	print("=== KADER ERGÄNZEN ===")
@@ -26,8 +29,9 @@ func _ready() -> void:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash("squad|%s|%s" % [str(def.short), str(def.name)])
 		var star_given := false
-		for pos in PLAN:
-			for n in PLAN[pos]:
+		var plan: Dictionary = PLAN_UNTERBAU if int(def.league) >= 4 else PLAN
+		for pos in plan:
+			for n in plan[pos]:
 				var boost := 0
 				if not star_given and pos == "MS":
 					boost = 6
