@@ -80,7 +80,7 @@ var _signature_confirm: Button
 
 func _ready() -> void:
 	_club_id = int(Game.setup.get("club_id", 1))
-	_def = Data.club_defs[_club_id - 1]
+	_def = Data.club_def_by_id(_club_id)
 	_tier = int(_def.league)
 	_offer_salary = Game.board_salary(int(_def.strength))
 	_offer_bonus = int(_offer_salary * 2 / 5000.0) * 5000

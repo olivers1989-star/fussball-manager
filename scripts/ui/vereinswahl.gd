@@ -83,7 +83,9 @@ func _fill_clubs() -> void:
 			var budget: int = (int(def.strength) - 50) * 1200000 if league_no == 1 \
 				else ((int(def.strength) - 44) * 400000 if league_no == 2 else maxi((int(def.strength) - 38) * 150000, 400000))
 			item.set_text(3, Fmt.money(budget))
-			item.set_metadata(0, i + 1)   # Club-ID = Index + 1
+			# Feste Vereins-ID aus den Stammdaten – NICHT die Listenposition
+			# (seit dem Vereinsumbau sind IDs nicht mehr positionsgebunden)
+			item.set_metadata(0, int(def.get("id", i + 1)))
 
 func _on_club_selected() -> void:
 	var item := _club_tree.get_selected()

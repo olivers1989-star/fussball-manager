@@ -63,5 +63,22 @@ func _ready() -> void:
 		assert(c.player_ids.size() >= 14, "%s hat nur %d Spieler" % [c.name, c.player_ids.size()])
 		assert(c.lineup.size() == 11, "%s hat keine gültige Elf" % c.name)
 
+	# Vereinsauswahl: die ID aus den Stammdaten muss zum richtigen Verein führen
+	# (Regression: früher Listenposition statt fester ID -> falscher Verein)
+	for def in Data.club_defs:
+		var by_id := Data.club_def_by_id(int(def.id))
+		assert(str(by_id.get("short", "")) == str(def.short),
+			"club_def_by_id liefert falschen Verein für ID %d" % int(def.id))
+	var bvw_id := -1
+	for cid in Game.world.clubs:
+		if Game.world.clubs[cid].short_name == "BVW":
+			bvw_id = cid
+	assert(bvw_id > 0)
+	Game.setup = {"name": "Test", "mode": "vereinsauswahl", "club_id": bvw_id}
+	Game.new_game(bvw_id)
+	assert(Game.my_club().short_name == "BVW",
+		"Auswahl BVW landet bei %s" % Game.my_club().short_name)
+	print("Vereinsauswahl: BVW ausgewählt -> %s (feste ID)" % Game.my_club().name)
+
 	print("=== VEREINE-TEST OK ===")
 	get_tree().quit(0)

@@ -54,8 +54,9 @@ func _offers() -> Array:
 		return Game.setup.initial_offers
 	var second_league: Array = []
 	for i in Data.club_defs.size():
-		if int(Data.club_defs[i].league) == 2:
-			second_league.append({"club_id": i + 1, "strength": int(Data.club_defs[i].strength)})
+		var d: Dictionary = Data.club_defs[i]
+		if int(d.league) == 2:
+			second_league.append({"club_id": int(d.get("id", i + 1)), "strength": int(d.strength)})
 	second_league.sort_custom(func(a, b): return a.strength < b.strength)
 	var weakest := second_league.slice(0, 8)
 	weakest.shuffle()
@@ -74,7 +75,7 @@ func _character(def: Dictionary) -> String:
 	return "relegation" if weaker <= 2 else "academy"
 
 func _offer_card(club_id: int) -> PanelContainer:
-	var def: Dictionary = Data.club_defs[club_id - 1]
+	var def: Dictionary = Data.club_def_by_id(club_id)
 	var character := _character(def)
 	var factor: float = Game.DIFFICULTY_FACTORS.get(Game.setup.get("difficulty", "Normal"), 1.0)
 	var chairman: String = def.get("chairman", "Der Vorstand")

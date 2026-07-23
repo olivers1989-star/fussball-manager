@@ -129,8 +129,8 @@ func _save_card(entry: Dictionary) -> PanelContainer:
 	var color_hex: String = str(m.get("club_color", ""))
 	if short_name == "" or color_hex == "":
 		var cid := int(m.get("my_club_id", 0))
-		if cid >= 1 and cid <= Data.club_defs.size():
-			var def: Dictionary = Data.club_defs[cid - 1]
+		var def: Dictionary = Data.club_def_by_id(cid)
+		if not def.is_empty():
 			short_name = str(def.short)
 			color_hex = str(def.color)
 	row.add_child(UITheme.club_badge(short_name if short_name != "" else "???",

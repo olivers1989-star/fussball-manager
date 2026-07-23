@@ -28,6 +28,15 @@ static func data_dir() -> String:
 	var external := OS.get_executable_path().get_base_dir().path_join("data")
 	return external if DirAccess.dir_exists_absolute(external) else "res://data"
 
+## Vereins-Stammdaten anhand der festen ID (nicht der Listenposition!). Seit
+## dem Vereinsumbau sind IDs nicht mehr durchnummeriert – Zugriffe müssen hier
+## durch, nicht über club_defs[id-1].
+func club_def_by_id(club_id: int) -> Dictionary:
+	for d in club_defs:
+		if int(d.get("id", -1)) == club_id:
+			return d
+	return {}
+
 ## Pfad einer Stammdatendatei: extern, wenn vorhanden, sonst aus dem PCK.
 static func data_file(file_name: String) -> String:
 	var external := data_dir().path_join(file_name)
