@@ -2,7 +2,7 @@ class_name TabAufstellung
 extends TabBase
 ## Aufstellung: links das 2D-Spielfeld mit FREI positionierbaren Spielern
 ## (Zonen-Erkennung: wo du ablegst, spielt er – LV/IV/RV, DM/ZM/OM, LM/RM,
-## LA/MS/RA, TW), daneben die Ersatzbank (max. 7), rechts die detaillierte
+## LA/MS/RA, TW), daneben die Ersatzbank (max. 9), rechts die detaillierte
 ## Kaderliste. Theoretisch sind auch 5 Stürmer möglich – ob sinnvoll, zeigt das Spiel.
 
 const GROUP_COLORS := {

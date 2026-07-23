@@ -260,10 +260,16 @@ func next_fixture_date(cid: int) -> int:
 	var f := next_fixture(cid)
 	return matchday_date(int(f.round)) if not f.is_empty() else matchday_date(matchday())
 
+## Tage bis zum nächsten EIGENEN Spiel (nicht bis zum nächsten Spieltag
+## überhaupt). An englischen Wochen spielen nur die unteren Ligen – dann darf
+## für einen 18er-Ligisten keine Spielvorbereitung anstehen.
 func days_until_matchday() -> int:
 	if season_over():
-		return 0
-	return maxi(0, int((matchday_date(matchday()) - date_unix()) / DAY))
+		return 999
+	var f := next_fixture(my_club_id)
+	if f.is_empty():
+		return 999   # kein eigenes Pflichtspiel mehr in dieser Saison
+	return maxi(0, int((matchday_date(int(f.round)) - date_unix()) / DAY))
 
 ## Realistischer Tagesrhythmus: Was steht an einem beliebigen Kalendertag an?
 ## Rückgabe: {kind, text} mit kind aus
@@ -277,9 +283,13 @@ func day_kind(unix: int) -> Dictionary:
 	var day_start := unix - (unix % DAY)
 	var first := int(dates[0])
 	var last := int(dates[dates.size() - 1])
-	# Spieltag / Vortag / Tag danach
+	# Spieltag / Vortag / Tag danach – aber nur, wenn die EIGENE Liga an diesem
+	# Termin spielt (englische Wochen betreffen nur die 20er-Ligen)
+	var my_plays := my_league()
 	for i in dates.size():
 		var md_day := int(dates[i]) - (int(dates[i]) % DAY)
+		if not my_plays.plays_in_round(i):
+			continue
 		if day_start == md_day:
 			return {"kind": "matchday", "text": "Spieltag %d" % (i + 1), "matchday": i}
 		if day_start == md_day - DAY:

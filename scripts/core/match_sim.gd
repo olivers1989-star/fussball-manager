@@ -280,7 +280,7 @@ func set_mentality(is_home: bool, m: String) -> bool:
 func subs_used(is_home: bool) -> int:
 	return subs_h if is_home else subs_a
 
-## Wechselkandidaten: NUR die nominierte Ersatzbank (max. 7 Plätze).
+## Wechselkandidaten: NUR die nominierte Ersatzbank (max. 9 Plätze).
 func bench(is_home: bool) -> Array:
 	var lineup: Array = lineup_h if is_home else lineup_a
 	var off: Array = _off_h if is_home else _off_a

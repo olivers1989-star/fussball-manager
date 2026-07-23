@@ -156,7 +156,8 @@ func load_logo() -> Texture2D:
 		return null
 	return ImageTexture.create_from_image(img)
 ## Bankgröße in Liga 1 und 2 (später über eine Ligen-Basis editierbar).
-const BENCH_SIZE := 7
+## Ersatzbank in allen deutschen Wettbewerben: 9 Plätze.
+const BENCH_SIZE := 9
 
 var formation: String = "4-4-2"
 var lineup: Array = []        # Spieler-IDs der Startelf
