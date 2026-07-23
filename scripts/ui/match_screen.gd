@@ -63,6 +63,7 @@ var _overlay_message: Label
 var _overlay_subs: Label
 var _live_spots := {}         # pid -> Vector2 (Anzeigeposition meiner Elf)
 var _overlay_selected := -1
+var _overlay_dragging := false   # true, solange eine Listenzeile gezogen wird
 var _was_running := false
 var _speech_buttons: Array = []
 var _speech_index := 0
@@ -662,8 +663,7 @@ func _finish() -> void:
 ## Ausführlicher Bericht nach dem Abpfiff: Torschützen, Spieler des Spiels,
 ## komplette Statistik, Noten und die weiteren Ergebnisse.
 func _build_report() -> void:
-	for child in _post_panel.get_children():
-		child.queue_free()
+	_clear_children(_post_panel)
 
 	var my_goals: int = _my_sim.hg if _my_home else _my_sim.ag
 	var opp_goals: int = _my_sim.ag if _my_home else _my_sim.hg
@@ -1074,8 +1074,7 @@ func _refresh_team_panels() -> void:
 		var tactic: Label = panel.get_meta("tactic")
 		tactic.text = "Taktik: %s" % (_my_sim.mentality_h if is_home else _my_sim.mentality_a)
 		var rows: VBoxContainer = panel.get_meta("rows")
-		for child in rows.get_children():
-			child.queue_free()
+		_clear_children(rows)
 		var lineup: Array = _my_sim.lineup_h if is_home else _my_sim.lineup_a
 		for pid in lineup:
 			var p := Game.get_player(pid)
@@ -1262,8 +1261,7 @@ func _update_stats() -> void:
 	_poss_bar.tooltip_text = "Spielanteile: %d %% für dich" % int(poss)
 	_poss_left.text = "%d %%" % int(poss)
 	_poss_right.text = "%d %%" % (100 - int(poss))
-	for child in _stats_grid.get_children():
-		child.queue_free()
+	_clear_children(_stats_grid)
 	var s: Dictionary = _my_sim.stats
 	var rows := [
 		["Torschüsse", s.chances_h, s.chances_a],
@@ -1325,26 +1323,11 @@ func _compare_bar(mine: int, theirs: int, height := 8) -> Control:
 
 ## Spielfeld-Ansicht einer Mannschaft im Spiel. Meine Elf ist interaktiv:
 ## Chips ziehen = Position live umstellen, Bank-Chip auf Spieler ziehen = Wechsel.
-class MatchPitch extends Control:
+class MatchPitch extends PitchBoard:
 	var screen
 	var is_home := false
 	var interactive := false
-	var chips := {}   # pid -> Button
-
-	func _draw() -> void:
-		draw_rect(Rect2(Vector2.ZERO, size), Color("#1a6b34"))
-		for i in 8:
-			if i % 2 == 0:
-				draw_rect(Rect2(0, size.y * i / 8.0, size.x, size.y / 8.0), Color("#1d7439"))
-		var line := Color(1, 1, 1, 0.45)
-		var inset := 4.0
-		draw_rect(Rect2(Vector2(inset, inset), size - Vector2(inset * 2, inset * 2)), line, false, 1.5)
-		draw_line(Vector2(inset, size.y * 0.5), Vector2(size.x - inset, size.y * 0.5), line, 1.5)
-		draw_arc(Vector2(size.x * 0.5, size.y * 0.5), size.x * 0.11, 0, TAU, 40, line, 1.5)
-		var box_w := size.x * 0.5
-		var box_h := size.y * 0.13
-		draw_rect(Rect2(Vector2((size.x - box_w) / 2.0, size.y - inset - box_h), Vector2(box_w, box_h)), line, false, 1.5)
-		draw_rect(Rect2(Vector2((size.x - box_w) / 2.0, inset), Vector2(box_w, box_h)), line, false, 1.5)
+	var chips := {}   # pid -> PlayerToken
 
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
 		return interactive and data is Dictionary and data.get("kind", "") in ["mslot", "mbench"]
@@ -1371,7 +1354,8 @@ func _close_overlay() -> void:
 func _build_overlay() -> void:
 	_overlay = PanelContainer.new()
 	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-	var sb := UITheme.box(Color(0.02, 0.04, 0.03, 0.97), 0)
+	# Vollständig deckend – sonst schimmert die Live-Ansicht durch
+	var sb := UITheme.box(Color(0.04, 0.06, 0.05, 1.0), 0)
 	sb.set_content_margin_all(18)
 	_overlay.add_theme_stylebox_override("panel", sb)
 	add_child(_overlay)
@@ -1466,10 +1450,9 @@ func _build_overlay() -> void:
 	_my_pitch.screen = self
 	_my_pitch.is_home = _my_home
 	_my_pitch.interactive = true
-	_my_pitch.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_my_pitch.clip_contents = true
 	_my_pitch.resized.connect(_refresh_overlay_pitches)
-	my_col.add_child(_my_pitch)
+	my_col.add_child(_pitch_frame(_my_pitch))
 
 	# ---------------- Rechts: Ersatzbank und Gegner
 	var right_col := VBoxContainer.new()
@@ -1500,10 +1483,20 @@ func _build_overlay() -> void:
 	_opp_pitch.screen = self
 	_opp_pitch.is_home = not _my_home
 	_opp_pitch.interactive = false
-	_opp_pitch.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_opp_pitch.clip_contents = true
 	_opp_pitch.resized.connect(_refresh_overlay_pitches)
-	right_col.add_child(_opp_pitch)
+	right_col.add_child(_pitch_frame(_opp_pitch))
+
+## Hält das Spielfeld im gleichen Seitenverhältnis wie im Aufstellungs-
+## bildschirm – sonst zieht eine breite Spalte Strafraum und Kreis auseinander.
+func _pitch_frame(pitch: MatchPitch) -> AspectRatioContainer:
+	var frame := AspectRatioContainer.new()
+	frame.ratio = 0.89
+	frame.stretch_mode = AspectRatioContainer.STRETCH_FIT
+	frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	frame.add_child(pitch)
+	return frame
 
 func _refresh_overlay() -> void:
 	_overlay_subs.text = "Wechsel %d/%d · %d. Minute · %d:%d" % [
@@ -1517,10 +1510,22 @@ func _refresh_overlay() -> void:
 ## Zonen-Standardpunkte mit horizontaler Auffächerung doppelter Positionen.
 func _display_spots(sim_lineup: Array, is_home: bool, club: ClubData) -> Dictionary:
 	var spots := {}
-	if club.lineup == sim_lineup and club.lineup_spots.size() == sim_lineup.size():
-		for i in sim_lineup.size():
-			spots[sim_lineup[i]] = club.lineup_spots[i]
-		return spots
+	if club.lineup == sim_lineup:
+		# Im Aufstellungsbildschirm gesetzte Punkte haben Vorrang. Wurde er nie
+		# geöffnet, ist lineup_spots leer – dann nehmen wir dieselben
+		# Formationspunkte, die auch er anzeigen würde. Nur so steht die Elf
+		# hier genauso wie dort.
+		var base: Array = club.lineup_spots
+		if base.size() != sim_lineup.size():
+			base = ClubData.FORMATION_SPOTS.get(club.formation, ClubData.FORMATION_SPOTS["4-4-2"])
+		if base.size() == sim_lineup.size():
+			for i in sim_lineup.size():
+				spots[sim_lineup[i]] = base[i]
+			if is_home == _my_home:
+				for pid in sim_lineup:
+					if _live_spots.has(pid):
+						spots[pid] = _live_spots[pid]
+			return spots
 	# Zonen zählen und auffächern
 	var by_slot := {}
 	for pid in sim_lineup:
@@ -1548,8 +1553,7 @@ func _refresh_overlay_pitches() -> void:
 	_fill_pitch(_opp_pitch, _my_sim.away if _my_home else _my_sim.home)
 
 func _fill_pitch(pitch: MatchPitch, club: ClubData) -> void:
-	for child in pitch.get_children():
-		child.queue_free()
+	_clear_children(pitch)
 	pitch.chips.clear()
 	var lineup: Array = _my_sim.lineup_h if pitch.is_home else _my_sim.lineup_a
 	var spots := _display_spots(lineup, pitch.is_home, club)
@@ -1595,8 +1599,8 @@ func _fill_pitch(pitch: MatchPitch, club: ClubData) -> void:
 			chip.pressed.connect(_on_overlay_chip_clicked.bind(pid))
 			chip.set_drag_forwarding(
 				func(_at: Vector2): return _overlay_drag_data(chip, p, "mslot", pid),
-				func(_at: Vector2, data: Variant): return data is Dictionary and data.get("kind", "") == "mbench",
-				func(_at: Vector2, data: Variant): _overlay_substitute(pid, int(data.pid)))
+				func(_at: Vector2, data: Variant): return data is Dictionary and data.get("kind", "") in ["mbench", "mslot"],
+				func(at: Vector2, data: Variant): _overlay_drop_on_chip(pid, chip, at, data))
 		pitch.add_child(chip)
 		pitch.chips[pid] = chip
 	# Karten entzerren, damit sich keine Token überdecken
@@ -1638,8 +1642,7 @@ func _declutter(pitch: MatchPitch, chip_size: Vector2, slack: Vector2) -> void:
 
 ## Spielerliste im Halbzeit-Fenster: Startelf und Bank mit Live-Noten.
 func _fill_overlay_list() -> void:
-	for child in _overlay_list.get_children():
-		child.queue_free()
+	_clear_children(_overlay_list)
 	var lineup: Array = _my_sim.lineup_h if _my_home else _my_sim.lineup_a
 	_overlay_list.add_child(_overlay_group_header("AUF DEM FELD", lineup.size()))
 	for pid in lineup:
@@ -1702,13 +1705,59 @@ func _overlay_list_row(pid: int, on_pitch: bool) -> PanelContainer:
 	var goals: int = _my_sim.match_goals.get(pid, 0)
 	line.add_child(_overlay_cell(str(goals) if goals > 0 else "–", 34, UITheme.ACCENT if goals > 0 else UITheme.TEXT_DIM))
 
+	# Container schlucken Maus-Events – die Zeile selbst muss sie bekommen
+	_pass_mouse_to_children(line)
+	# Ziehen aus der Liste: aufs Feld, auf eine Karte oder auf eine andere Zeile.
+	row.set_drag_forwarding(
+		func(_at: Vector2):
+			_overlay_dragging = true
+			return _overlay_drag_data(row, p, "mslot" if on_pitch else "mbench", pid),
+		func(_at: Vector2, data: Variant): return data is Dictionary \
+			and data.get("kind", "") in ["mbench", "mslot"] and int(data.get("pid", -1)) != pid,
+		func(_at: Vector2, data: Variant): _overlay_drop_on_row(pid, on_pitch, data))
+	# Auswahl erst beim LOSLASSEN: würde schon der Mausdruck die Liste neu
+	# aufbauen, wäre diese Zeile weg, bevor Godot einen Drag starten kann.
 	row.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			if _overlay_dragging:
+				_overlay_dragging = false
+				return
 			if on_pitch:
 				_on_overlay_chip_clicked(pid)
 			else:
 				_on_overlay_bench_clicked(pid))
 	return row
+
+## Ablage auf einer Listenzeile: Bank auf Feld = Wechsel, Feld auf Feld =
+## Positionstausch, Feld auf Bank = der Bankspieler kommt für ihn.
+func _overlay_drop_on_row(pid: int, on_pitch: bool, data: Dictionary) -> void:
+	var other := int(data.pid)
+	var dragged_from_pitch: bool = str(data.kind) == "mslot"
+	if on_pitch and dragged_from_pitch:
+		_overlay_swap_positions(pid, other)
+	elif on_pitch and not dragged_from_pitch:
+		_overlay_substitute(pid, other)
+	elif not on_pitch and dragged_from_pitch:
+		_overlay_substitute(other, pid)
+	else:
+		_overlay_message.text = "Zwei Bankspieler lassen sich nicht tauschen."
+		_refresh_overlay()
+
+## Leert einen Container SOFORT. queue_free() allein reicht nicht: Die Knoten
+## hängen bis zum Frame-Ende weiter im Baum – sie würden neue Karten beim
+## Entzerren wegschieben und Klicks sowie Drags abfangen.
+func _clear_children(node: Node) -> void:
+	for child in node.get_children():
+		node.remove_child(child)
+		child.queue_free()
+
+## Setzt Maus-Events aller Kinder auf "ignorieren", damit die Zeile selbst
+## Klicks und Drag & Drop erhält.
+func _pass_mouse_to_children(node: Node) -> void:
+	for child in node.get_children():
+		if child is Control:
+			child.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_pass_mouse_to_children(child)
 
 func _overlay_cell(text: String, width: int, color: Color) -> Label:
 	var l := Label.new()
@@ -1730,19 +1779,18 @@ func make_overlay_preview(source: Control, p: PlayerData) -> void:
 	style.set_content_margin_all(6)
 	panel.add_theme_stylebox_override("panel", style)
 	var label := Label.new()
-	label.text = "%s\nSt %d" % [p.last_name, p.strength]
+	label.text = "%s\n%s · St %d" % [p.last_name, p.pos, p.strength]
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_font_size_override("font_size", 13)
 	panel.add_child(label)
-	panel.custom_minimum_size = Vector2(118, 48)
+	panel.custom_minimum_size = Vector2(142, 58)
 	var wrapper := Control.new()
 	wrapper.add_child(panel)
 	panel.position = -panel.custom_minimum_size / 2.0
 	source.set_drag_preview(wrapper)
 
 func _fill_overlay_bench() -> void:
-	for child in _overlay_bench_box.get_children():
-		child.queue_free()
+	_clear_children(_overlay_bench_box)
 	for pid in _my_sim.bench(_my_home):
 		var p := Game.get_player(pid)
 		var chip := Button.new()
@@ -1793,8 +1841,8 @@ func _fill_overlay_bench() -> void:
 		chip.pressed.connect(_on_overlay_bench_clicked.bind(pid))
 		chip.set_drag_forwarding(
 			func(_at: Vector2): return _overlay_drag_data(chip, p, "mbench", pid),
-			func(_at: Vector2, _data: Variant): return false,
-			func(_at: Vector2, _data: Variant): pass)
+			func(_at: Vector2, data: Variant): return data is Dictionary and data.get("kind", "") == "mslot",
+			func(_at: Vector2, data: Variant): _overlay_substitute(int(data.pid), pid))
 		_overlay_bench_box.add_child(chip)
 
 ## Drop auf meinem Feld: Feldspieler verschieben (Zone live umstellen)
@@ -1822,6 +1870,40 @@ func _overlay_drop_on_pitch(at: Vector2, data: Dictionary, pitch: MatchPitch) ->
 				nearest = pid
 		if nearest > 0:
 			_overlay_substitute(nearest, int(data.pid))
+
+## Ablage auf einer Spielerkarte: Bankspieler = Wechsel; Feldspieler in der
+## Mitte = Positionen tauschen, am Rand = frei daneben ablegen. Ohne das
+## würden die großen Karten den halben Platz blockieren, weil jeder Drop auf
+## einer Karte statt auf dem Rasen landet.
+func _overlay_drop_on_chip(pid: int, chip: Control, at: Vector2, data: Dictionary) -> void:
+	if str(data.kind) == "mbench":
+		_overlay_substitute(pid, int(data.pid))
+		return
+	var other := int(data.pid)
+	if other == pid:
+		_overlay_drop_on_pitch(chip.position + at, data, _my_pitch)
+		return
+	var core := Rect2(chip.size * 0.22, chip.size * 0.56)
+	if core.has_point(at):
+		_overlay_swap_positions(pid, other)
+	else:
+		_overlay_drop_on_pitch(chip.position + at, data, _my_pitch)
+
+## Zwei Feldspieler tauschen Zone und Anzeigeposition.
+func _overlay_swap_positions(a: int, b: int) -> void:
+	var lineup: Array = _my_sim.lineup_h if _my_home else _my_sim.lineup_a
+	if not (lineup.has(a) and lineup.has(b)):
+		return
+	var spots := _display_spots(lineup, _my_home, Game.my_club())
+	var zone_a: String = _my_sim._slot_of(a, _my_home)
+	var zone_b: String = _my_sim._slot_of(b, _my_home)
+	_my_sim.set_slot(_my_home, a, zone_b)
+	_my_sim.set_slot(_my_home, b, zone_a)
+	_live_spots[a] = spots.get(b, Vector2(0.5, 0.5))
+	_live_spots[b] = spots.get(a, Vector2(0.5, 0.5))
+	_overlay_message.text = "%s und %s haben die Positionen getauscht." % [
+		Game.get_player(a).last_name, Game.get_player(b).last_name]
+	_refresh_overlay()
 
 func _overlay_substitute(pid_out: int, pid_in: int) -> void:
 	var error := _my_sim.substitute(_my_home, pid_out, pid_in)
