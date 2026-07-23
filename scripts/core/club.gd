@@ -83,6 +83,16 @@ var sponsor_name: String = ""
 var sponsor_per_md: int = 50000
 var chairman: String = ""      # Vorstandsvorsitzender (fest je Verein, aus clubs.json)
 var land: String = ""          # Bundesland-Kürzel, bestimmt die Regionalliga-Staffel
+var parent_id: int = 0         # ID der ersten Mannschaft, 0 = eigenständiger Verein
+var parent_short: String = ""  # Kürzel der ersten Mannschaft (aus clubs.json, wird zu parent_id aufgelöst)
+
+## Höchste Spielklasse, die eine Zweitmannschaft erreichen darf. Reserveteams
+## dürfen nie in die 1. oder 2. Liga (Tier 1/2) aufsteigen.
+const MAX_RESERVE_TIER := 3
+
+## Ist dieser Verein eine Zweitmannschaft (an eine erste Mannschaft gekoppelt)?
+func is_reserve() -> bool:
+	return parent_id > 0
 
 ## Die 16 Bundesländer – in clubs.json als Feld "land" editierbar.
 const LAENDER := {
@@ -412,7 +422,7 @@ func squad_strength(all_players: Dictionary) -> float:
 func to_dict() -> Dictionary:
 	return {
 		"id": id, "name": name, "short": short_name, "city": city, "land": land,
-		"stadium": stadium, "cap": capacity, "color": color, "base": base_strength,
+		"parent": parent_id, "stadium": stadium, "cap": capacity, "color": color, "base": base_strength,
 		"league": league_id, "budget": budget, "sponsor": sponsor_name,
 		"sponsor_md": sponsor_per_md, "chairman": chairman, "formation": formation,
 		"lineup": lineup, "bench": bench, "players": player_ids,
@@ -426,6 +436,7 @@ static func from_dict(d: Dictionary) -> ClubData:
 	c.short_name = d.short
 	c.city = d.city
 	c.land = str(d.get("land", ""))
+	c.parent_id = int(d.get("parent", 0))
 	c.stadium = d.stadium
 	c.capacity = int(d.cap)
 	c.color = d.color

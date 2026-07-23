@@ -1086,6 +1086,21 @@ func _season_best_rated() -> Array:
 ## Setzt Auf- und Abstieg um – inklusive der Relegationsspiele zwischen dem
 ## ersten Nichtabstiegsplatz oben und dem ersten Nichtaufstiegsplatz unten.
 ## Die Zusammenfassung bekommt Bewegungen und Relegationsergebnisse.
+## Die aufstiegsberechtigten Vereine einer Liga in Tabellenreihenfolge. Steigt
+## die Liga in die 1. oder 2. Liga auf, werden Zweitmannschaften übersprungen –
+## sie dürfen dort nicht hin (ClubData.MAX_RESERVE_TIER). Aus der Regionalliga
+## in die Dritte Liga dürfen Reserveteams dagegen aufsteigen.
+func _promotion_candidates(lid: int, rows: Array) -> Array:
+	var target_tier: int = world.leagues[lid].tier - 1 if world.leagues.has(lid) else lid - 1
+	var block_reserves: bool = target_tier < ClubData.MAX_RESERVE_TIER
+	var out: Array = []
+	for row in rows:
+		var c := club(int(row.club_id))
+		if block_reserves and c.is_reserve():
+			continue
+		out.append(c.id)
+	return out
+
 func _apply_promotion_and_relegation(tables: Dictionary, summary: Dictionary) -> void:
 	var moves := {}          # club_id -> neue Liga (4 = "irgendeine Staffel")
 	var playoffs: Array = []
@@ -1095,8 +1110,12 @@ func _apply_promotion_and_relegation(tables: Dictionary, summary: Dictionary) ->
 		if rules.is_empty():
 			continue
 		var rows: Array = tables[lid]
+		# Aufsteiger unter den aufstiegsberechtigten Vereinen (Zweitmannschaften
+		# dürfen nicht in die 1./2. Liga)
+		var candidates := _promotion_candidates(lid, rows)
 		for i in int(rules.up_direct):
-			moves[int(rows[i].club_id)] = lid - 1
+			if i < candidates.size():
+				moves[candidates[i]] = lid - 1
 		for i in int(rules.down_direct):
 			moves[int(rows[rows.size() - 1 - i].club_id)] = lid + 1
 
@@ -1110,7 +1129,13 @@ func _apply_promotion_and_relegation(tables: Dictionary, summary: Dictionary) ->
 		var upper_rows: Array = tables[upper]
 		var lower_rows: Array = tables[lower]
 		var keeper := club(int(upper_rows[upper_rows.size() - 1 - int(LEAGUE_RULES[upper].down_direct)].club_id))
-		var challenger := club(int(lower_rows[int(LEAGUE_RULES[lower].up_direct)].club_id))
+		# Herausforderer ist der beste NICHT aufgestiegene und aufstiegsberechtigte
+		# Verein der unteren Liga (überspringt Zweitmannschaften)
+		var lower_cands := _promotion_candidates(lower, lower_rows)
+		var challenger_idx: int = int(LEAGUE_RULES[lower].up_direct)
+		if challenger_idx >= lower_cands.size():
+			continue
+		var challenger := club(int(lower_cands[challenger_idx]))
 		var result := _play_two_legs(keeper, challenger)
 		result["kind"] = "relegation"
 		result["title"] = "Relegation %s ↔ %s" % [world.leagues[upper].name, world.leagues[lower].name]
@@ -1125,6 +1150,7 @@ func _apply_promotion_and_relegation(tables: Dictionary, summary: Dictionary) ->
 
 	_promote_from_regional(tables, moves, playoffs)
 	_spread_relegated_to_staffeln(moves)
+	_separate_reserves_from_parents(moves)
 
 	# Bewegungen anwenden und alle Ligen neu besetzen
 	var movements := {}
@@ -1196,6 +1222,32 @@ func _promote_from_regional(tables: Dictionary, moves: Dictionary, playoffs: Arr
 	moves[a.id if bool(result.a_wins) else b.id] = 3
 	_add_news("relegation", "Aufstiegsrelegation: %s gegen %s %d:%d – %s steigt in die Dritte Liga auf." % [
 		a.name, b.name, int(result.total_a), int(result.total_b), str(result.winner)])
+
+## Eine Zweitmannschaft darf NIE in derselben Liga wie ihre erste Mannschaft
+## stehen. Passiert das (weil die erste Mannschaft in die Dritte Liga oder
+## Regionalliga durchgereicht wurde), steigt die Zweitmannschaft zwangsweise
+## eine Ebene ab. Wir prüfen die Ziel-Ligen NACH allen anderen Bewegungen.
+func _separate_reserves_from_parents(moves: Dictionary) -> void:
+	for cid in world.clubs:
+		var res: ClubData = world.clubs[cid]
+		if not res.is_reserve() or res.parent_id <= 0 or not world.clubs.has(res.parent_id):
+			continue
+		var res_target: int = int(moves.get(cid, res.league_id))
+		var parent := club(res.parent_id)
+		var parent_target: int = int(moves.get(parent.id, parent.league_id))
+		if res_target != parent_target:
+			continue
+		# Kollision: Zweitmannschaft eine Ebene tiefer schicken
+		var lower: int
+		if Data.REGIONAL_LEAGUES.has(res_target):
+			lower = 0                       # aus der Regionalliga in die Oberliga
+		elif res_target == 3:
+			lower = res.home_staffel()      # aus der Dritten Liga in die Heimatstaffel
+		else:
+			lower = res_target + 1
+		moves[cid] = lower
+		_add_news("liga", "%s muss zwangsabsteigen – eine Zweitmannschaft darf nicht mit %s in einer Liga spielen." % [
+			res.name, parent.name])
 
 ## Absteiger aus der Dritten Liga gehen IMMER in die Staffel ihres Bundeslands –
 ## niemand wird in eine fremde Region verschoben.
@@ -1714,6 +1766,7 @@ func _migrate_lower_leagues_v031() -> void:
 				world.leagues[lid].club_ids.append(cid)
 		missing = Data.REGIONAL_LEAGUES.duplicate()
 	Data.add_missing_clubs(world)
+	Data.resolve_reserve_parents(world)
 	for lid in missing:
 		var lg: LeagueData = world.leagues[lid]
 		lg.fixtures = ScheduleGen.build_league_fixtures(lg.club_ids)

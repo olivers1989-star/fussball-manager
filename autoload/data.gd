@@ -85,6 +85,7 @@ func generate_world() -> Dictionary:
 		c.color = def.color
 		c.base_strength = int(def.strength)
 		c.league_id = int(def.league)
+		c.parent_short = str(def.get("parent", ""))
 		c.sponsor_name = sponsor_pool[i % sponsor_pool.size()]
 		c.chairman = def.get("chairman", "")
 		world.clubs[c.id] = c
@@ -103,10 +104,23 @@ func generate_world() -> Dictionary:
 		c.refresh_sponsor(world.players)
 		c.budget = maxi(int(c.salaries_per_matchday(world.players) * 34 * 0.35), 500000)
 
+	resolve_reserve_parents(world)
 	for lid in world.leagues:
 		var lg: LeagueData = world.leagues[lid]
 		lg.fixtures = ScheduleGen.build_league_fixtures(lg.club_ids)
 	return world
+
+## Löst die Parent-Kürzel der Zweitmannschaften zu IDs auf (nachdem alle Vereine
+## existieren). So bleibt clubs.json von Hand editierbar – dort steht das Kürzel
+## der ersten Mannschaft, z. B. "parent": "BVW".
+static func resolve_reserve_parents(world: Dictionary) -> void:
+	var by_short := {}
+	for cid in world.clubs:
+		by_short[world.clubs[cid].short_name] = cid
+	for cid in world.clubs:
+		var c: ClubData = world.clubs[cid]
+		if c.parent_short != "" and by_short.has(c.parent_short):
+			c.parent_id = int(by_short[c.parent_short])
 
 ## Der Ligaunterbau des Spiels. Die Regionalliga ist NICHT spielbar – sie läuft
 ## nur mit, damit Vereine in die Dritte Liga aufsteigen können.
@@ -245,6 +259,7 @@ func add_missing_clubs(world: Dictionary) -> void:
 		c.color = def.color
 		c.base_strength = int(def.strength)
 		c.league_id = int(def.league)
+		c.parent_short = str(def.get("parent", ""))
 		c.sponsor_name = sponsor_pool[i % sponsor_pool.size()]
 		c.chairman = def.get("chairman", "")
 		world.clubs[c.id] = c
