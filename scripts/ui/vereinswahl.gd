@@ -62,9 +62,13 @@ func _ready() -> void:
 
 func _fill_clubs() -> void:
 	var root := _club_tree.create_item()
-	for league_no in [1, 2]:
+	# Die Regionalliga ist Unterbau – dort kann man keinen Posten übernehmen
+	for league_def in Data.LEAGUE_DEFS:
+		if not bool(league_def.playable):
+			continue
+		var league_no := int(league_def.id)
 		var parent := _club_tree.create_item(root)
-		parent.set_text(0, "Erste Liga" if league_no == 1 else "Zweite Liga")
+		parent.set_text(0, str(league_def.name))
 		parent.set_selectable(0, false)
 		parent.set_custom_color(0, Color("#4ade80"))
 		for i in Data.club_defs.size():
@@ -76,7 +80,8 @@ func _fill_clubs() -> void:
 			item.set_custom_color(0, Color(def.color))
 			item.set_text(1, "%s (%s Plätze)" % [def.stadium, Fmt.thousands(int(def.capacity))])
 			item.set_text(2, "~%d" % int(def.strength))
-			var budget: int = (int(def.strength) - 50) * 1200000 if league_no == 1 else (int(def.strength) - 44) * 400000
+			var budget: int = (int(def.strength) - 50) * 1200000 if league_no == 1 \
+				else ((int(def.strength) - 44) * 400000 if league_no == 2 else maxi((int(def.strength) - 38) * 150000, 400000))
 			item.set_text(3, Fmt.money(budget))
 			item.set_metadata(0, i + 1)   # Club-ID = Index + 1
 

@@ -63,7 +63,7 @@ func refresh() -> void:
 	else:
 		var home := int(f.home) == Game.my_club_id
 		var opponent := Game.club(int(f.away) if home else int(f.home))
-		var d := Time.get_datetime_dict_from_unix_time(Game.matchday_date(Game.matchday()))
+		var d := Time.get_datetime_dict_from_unix_time(Game.next_fixture_date(Game.my_club_id))
 		_opponent_label.text = "Nächstes Spiel: %s gegen %s am %02d.%02d.  ·  Aktueller Matchplan: „%s“ – gewählt wird in der Spielvorbereitung am Vortag." % [
 			"Heim" if home else "Auswärts", opponent.name, int(d.day), int(d.month), Game.match_plan]
 

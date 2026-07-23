@@ -20,9 +20,13 @@ func _init() -> void:
 	box.add_child(top)
 	top.add_child(heading("Tabelle"))
 	var group := ButtonGroup.new()
-	for league_id in [1, 2]:
+	for def in Data.LEAGUE_DEFS:
+		var league_id := int(def.id)
 		var b := Button.new()
-		b.text = "Erste Liga" if league_id == 1 else "Zweite Liga"
+		b.text = str(def.name)
+		if not bool(def.playable):
+			b.text += "  (Unterbau)"
+			b.tooltip_text = "Nicht spielbar – läuft nur mit, damit Vereine in die Dritte Liga aufsteigen können."
 		b.toggle_mode = true
 		b.button_group = group
 		b.set_pressed_no_signal(league_id == 1)
@@ -30,7 +34,7 @@ func _init() -> void:
 		top.add_child(b)
 		_league_buttons[league_id] = b
 	var legend := info_label()
-	legend.text = "     ▪ Grün: Meister/Aufstieg   ·   ▪ Rot: Abstieg"
+	legend.text = "     ▪ Grün: Aufstieg   ·   ▪ Gelb: Relegation   ·   ▪ Rot: Abstieg"
 	top.add_child(legend)
 
 	# Kopfzeile
@@ -58,6 +62,23 @@ func _init() -> void:
 	_rows_box.add_theme_constant_override("separation", 6)
 	_rows_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_rows_box)
+
+## Farbstreifen links: Aufstieg grün, Relegation gelb, Abstieg rot – abgeleitet
+## aus den Auf-/Abstiegsregeln der Liga.
+func _zone_color(pos: int, lg: LeagueData) -> Color:
+	var rules: Dictionary = Game.LEAGUE_RULES.get(lg.id, {})
+	if rules.is_empty():
+		return Color(0, 0, 0, 0)
+	var size: int = lg.club_ids.size()
+	if pos <= int(rules.up_direct):
+		return UITheme.ACCENT
+	if int(rules.up_playoff) > 0 and pos == int(rules.up_direct) + 1:
+		return UITheme.WARN
+	if pos > size - int(rules.down_direct):
+		return UITheme.DANGER
+	if int(rules.down_playoff) > 0 and pos == size - int(rules.down_direct):
+		return UITheme.WARN
+	return Color(0, 0, 0, 0)
 
 func _head_label(text: String, width: int) -> Label:
 	var l := Label.new()
@@ -104,14 +125,11 @@ func _table_row(pos: int, row: Dictionary, lg: LeagueData) -> PanelContainer:
 	line.add_theme_constant_override("separation", 10)
 	panel.add_child(line)
 
-	# Zonen-Markierung
+	# Zonen-Markierung aus den Auf-/Abstiegsregeln der Liga
 	var zone := ColorRect.new()
 	zone.custom_minimum_size = Vector2(5, 26)
 	zone.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	if lg.tier == 1:
-		zone.color = UITheme.ACCENT if pos == 1 else (UITheme.DANGER if pos >= 16 else Color(0, 0, 0, 0))
-	else:
-		zone.color = UITheme.ACCENT if pos <= 3 else Color(0, 0, 0, 0)
+	zone.color = _zone_color(pos, lg)
 	line.add_child(zone)
 
 	var pos_label := Label.new()

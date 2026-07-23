@@ -13,6 +13,10 @@ func _ready() -> void:
 	hub.show_screen("Tabelle")
 	await get_tree().create_timer(1.0).timeout
 	get_viewport().get_texture().get_image().save_png("user://tabelle_shot.png")
+	# Dritte Liga (20 Vereine) und den nicht spielbaren Unterbau prüfen
+	hub._screens["Tabelle"]._on_league_selected(3)
+	await get_tree().create_timer(0.8).timeout
+	get_viewport().get_texture().get_image().save_png("user://tabelle_liga3_shot.png")
 	hub.show_screen("Spielplan")
 	await get_tree().create_timer(1.0).timeout
 	get_viewport().get_texture().get_image().save_png("user://spielplan_shot.png")

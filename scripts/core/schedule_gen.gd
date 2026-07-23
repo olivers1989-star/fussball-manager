@@ -47,11 +47,40 @@ static func season_start(year: int) -> int:
 static func season_end(year: int) -> int:
 	return season_start(year + 1) - 86400
 
-## Alle 34 Spieltagstermine einer Saison: wöchentlich samstags, mit WINTERPAUSE.
-## Hinrunde ab dem ersten August-Samstag – davor liegen rund fünf Wochen
-## Sommervorbereitung. Rückrunde ab dem ersten Februar-Samstag, damit der letzte
-## Spieltag Ende Mai fällt und der Juni als Sommerpause frei bleibt.
+## Die vier ENGLISCHEN WOCHEN: Positionen im Samstags-Raster (0-basiert), nach
+## denen jeweils ein Dienstagstermin eingeschoben wird. Nur die 20er-Ligen
+## (Dritte Liga, Regionalliga) spielen an diesen Terminen – sie brauchen 38
+## Spieltage, die 18er-Ligen nur 34.
+const MIDWEEK_AFTER := [3, 8, 22, 27]
+
+## Alle Spieltagstermine einer Saison im gemeinsamen Kalender: 34 Samstage plus
+## vier Dienstage. Hinrunde ab dem ersten August-Samstag – davor liegen rund
+## fünf Wochen Sommervorbereitung. Rückrunde ab dem ersten Februar-Samstag,
+## damit der letzte Spieltag Ende Mai fällt und der Juni frei bleibt.
 static func matchday_dates(year: int) -> Array:
+	var saturdays := _saturdays(year)
+	var dates: Array = []
+	for i in saturdays.size():
+		dates.append(saturdays[i])
+		if MIDWEEK_AFTER.has(i):
+			dates.append(int(saturdays[i]) + 3 * 86400)   # Dienstag darauf
+	return dates
+
+## Die Slot-Nummern der Samstagstermine im Gesamtkalender – das Raster der
+## 18er-Ligen.
+static func saturday_slots() -> Array:
+	var slots: Array = []
+	var slot := 0
+	for i in 34:
+		slots.append(slot)
+		slot += 2 if MIDWEEK_AFTER.has(i) else 1
+	return slots
+
+## Gesamtzahl der Spieltags-Termine einer Saison (34 Samstage + 4 Dienstage).
+static func total_rounds() -> int:
+	return 34 + MIDWEEK_AFTER.size()
+
+static func _saturdays(year: int) -> Array:
 	var dates: Array = []
 	var t := int(Time.get_unix_time_from_datetime_dict({
 		"year": year, "month": 8, "day": 1, "hour": 12, "minute": 0, "second": 0}))
@@ -67,3 +96,15 @@ static func matchday_dates(year: int) -> Array:
 	for i in 17:
 		dates.append(rt + i * 7 * 86400)
 	return dates
+
+## Baut den Spielplan einer Liga und legt ihn auf das gemeinsame Spieltagsraster.
+## 18er-Ligen bekommen die 34 Samstage, 20er-Ligen alle 38 Termine.
+static func build_league_fixtures(club_ids: Array) -> Array:
+	var fixtures := build_fixtures(club_ids)
+	var rounds: int = (club_ids.size() - 1) * 2
+	if rounds >= total_rounds():
+		return fixtures
+	var slots := saturday_slots()
+	for f in fixtures:
+		f.round = int(slots[int(f.round)]) if int(f.round) < slots.size() else int(f.round)
+	return fixtures

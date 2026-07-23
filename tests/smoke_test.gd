@@ -35,33 +35,39 @@ func _ready() -> void:
 	print("Attribut-Check OK (TW-Reflexe %d, ST-Abschluss %d)" % [tw_sample.attr("reflexe"), st_sample.attr("abschluss")])
 	var world: Dictionary = Game.world
 	print("Spieler: %d, Vereine: %d, Ligen: %d" % [world.players.size(), world.clubs.size(), world.leagues.size()])
-	assert(world.clubs.size() == 36)
-	assert(Game.league(1).fixtures.size() == 306)
+	assert(world.clubs.size() == 76)
+	assert(world.leagues.size() == 4)
+	assert(Game.league(1).fixtures.size() == 306)   # 18 Vereine
+	assert(Game.league(3).fixtures.size() == 380)   # 20 Vereine
+	assert(not Game.league(4).playable)
 
 	# Kalender: Saison startet am 1. Juli (5 Wochen Vorbereitung), Spieltage samstags, Winterpause
 	assert(Game.date_dict().month == 7 and Game.date_dict().day == 1)
 	assert(Game.matchday_date(0) - Game.date_unix() >= 27 * 86400)
-	assert(Game.world.matchday_dates.size() == 34)
+	assert(Game.world.matchday_dates.size() == 38)   # 34 Samstage + 4 englische Wochen
 	assert(Time.get_datetime_dict_from_unix_time(Game.matchday_date(0)).weekday == Time.WEEKDAY_SATURDAY)
 	assert(Time.get_datetime_dict_from_unix_time(Game.matchday_date(0)).month == 8)
-	assert(Game.matchday_date(17) - Game.matchday_date(16) > 30 * 86400)
-	assert(Time.get_datetime_dict_from_unix_time(Game.matchday_date(17)).month == 2)
+	assert(Game.league(1).own_rounds().size() == 34)
+	assert(Game.league(3).own_rounds().size() == 38)
 	Game.advance_day()
 	assert(Game.date_dict().day == 2)
 
 	var total_goals := 0
 	var total_matches := 0
-	for md in 34:
+	for md in Game.ROUNDS_PER_SEASON:
 		var result := Game.play_matchday()
-		assert(not result.mine.is_empty())
-		total_goals += int(result.mine.fixture.hg) + int(result.mine.fixture.ag)
-		total_matches += 1
+		# An englischen Wochen spielen nur die unteren Ligen – dann fehlt
+		# result.mine, die übrigen Partien laufen aber trotzdem
+		if not result.mine.is_empty():
+			total_goals += int(result.mine.fixture.hg) + int(result.mine.fixture.ag)
+			total_matches += 1
 		for entry in result.others:
 			total_goals += int(entry.fixture.hg) + int(entry.fixture.ag)
 			total_matches += 1
 	var goals_per_match := float(total_goals) / total_matches
-	print("34 Spieltage simuliert: %d Spiele, %.2f Tore/Spiel" % [total_matches, goals_per_match])
-	assert(total_matches == 34 * 18)
+	print("Saison simuliert: %d Spiele, %.2f Tore/Spiel" % [total_matches, goals_per_match])
+	# 2×(34 Spieltage × 9 Partien) oben + 2×(38 × 10) unten
+	assert(total_matches == 34 * 18 + 38 * 20)
 	assert(goals_per_match > 1.8 and goals_per_match < 4.2)
 	assert(Game.season_over())
 
@@ -94,9 +100,12 @@ func _ready() -> void:
 
 	var summary := Game.end_season()
 	print("Saisonwechsel: Aufsteiger %s / Absteiger %s" % [", ".join(summary.promoted), ", ".join(summary.relegated)])
-	assert(summary.promoted.size() == 3 and summary.relegated.size() == 3)
+	assert(summary.promoted.size() >= 2 and summary.relegated.size() >= 2)
+	assert(summary.promoted.size() == summary.relegated.size())
+	assert(summary.playoffs.size() == 2)
 	assert(Game.matchday() == 0)
 	assert(Game.league(1).club_ids.size() == 18 and Game.league(2).club_ids.size() == 18)
+	assert(Game.league(3).club_ids.size() == 20 and Game.league(4).club_ids.size() == 20)
 
 	var result2 := Game.play_matchday()
 	assert(not result2.mine.is_empty())

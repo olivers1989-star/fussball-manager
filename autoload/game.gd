@@ -3,7 +3,9 @@ extends Node
 ## und steuert Spieltage, Saisonwechsel, Transfers sowie Speichern/Laden.
 
 const SAVE_DIR := "user://saves"
-const ROUNDS_PER_SEASON := 34
+## Termine im gemeinsamen Spieltagskalender: 34 Samstage + 4 englische Wochen.
+## Die 18er-Ligen spielen nur an den Samstagen, die 20er-Ligen an allen 38.
+const ROUNDS_PER_SEASON := 38
 const DIFFICULTY_FACTORS := {"Leicht": 1.5, "Normal": 1.0, "Schwer": 0.5}
 
 ## Trainer-Fähigkeiten mit Spielwirkung:
@@ -227,8 +229,34 @@ func matchday_date(md: int) -> int:
 	var dates: Array = world.matchday_dates
 	return int(dates[mini(md, dates.size() - 1)])
 
+## Heute wird irgendwo gespielt – auch an englischen Wochen, an denen nur die
+## Dritte Liga und die Regionalliga antreten.
 func is_matchday_today() -> bool:
 	return not season_over() and date_unix() >= matchday_date(matchday())
+
+## Spielt MEINE Mannschaft an diesem Spieltag? An englischen Wochen nicht,
+## wenn sie in einer 18er-Liga steht.
+func my_match_today() -> bool:
+	return is_matchday_today() and my_league().plays_in_round(matchday())
+
+## Spieltagsnummer innerhalb der eigenen Liga (für Anzeigen wie „12/34").
+func my_matchday_number() -> int:
+	var lg := my_league()
+	var own: Array = lg.own_rounds()
+	if own.is_empty():
+		return 0
+	var idx := own.find(matchday())
+	if idx >= 0:
+		return idx + 1
+	return mini(lg.matchdays_done(matchday()) + 1, own.size())
+
+func my_matchdays_total() -> int:
+	return maxi(my_league().own_rounds().size(), 1)
+
+## Termin der nächsten eigenen Partie (nicht des nächsten Spieltags überhaupt).
+func next_fixture_date(cid: int) -> int:
+	var f := next_fixture(cid)
+	return matchday_date(int(f.round)) if not f.is_empty() else matchday_date(matchday())
 
 func days_until_matchday() -> int:
 	if season_over():
@@ -628,7 +656,9 @@ func _daily_recovery() -> void:
 func next_fixture(cid: int) -> Dictionary:
 	if season_over():
 		return {}
-	return league(club(cid).league_id).fixture_of(cid, matchday())
+	# Ab dem aktuellen Termin suchen: An englischen Wochen pausieren die
+	# 18er-Ligen, ihr nächstes Spiel liegt dann einen Slot später.
+	return league(club(cid).league_id).next_fixture_of(cid, matchday())
 
 # ------------------------------------------------------------------ Spieltag
 
@@ -720,6 +750,9 @@ func finish_matchday(md: Dictionary) -> void:
 func _heal_and_suspend_tick() -> void:
 	for pid in world.players:
 		var p: PlayerData = world.players[pid]
+		# Nur zählen, wenn die Liga des Spielers an diesem Termin gespielt hat
+		if not world.leagues[club(p.club_id).league_id].plays_in_round(matchday()):
+			continue
 		if p.injury_matchdays > 0:
 			p.injury_matchdays -= 1
 			if p.injury_matchdays == 0 and p.club_id == my_club_id:
@@ -728,6 +761,22 @@ func _heal_and_suspend_tick() -> void:
 			p.suspended_matchdays -= 1
 			if p.suspended_matchdays == 0 and p.club_id == my_club_id:
 				_add_news("fit", "%s hat seine Sperre abgesessen und ist wieder spielberechtigt." % p.full_name())
+
+## Spieltag OHNE eigene Beteiligung (englische Woche der unteren Ligen):
+## läuft automatisch durch. Rückgabe: kurze Meldung für den Wochendurchlauf.
+func simulate_matchday_without_me() -> Dictionary:
+	var md := start_matchday()
+	for sim in md.others:
+		sim.run_full()
+	if md.mine != null:
+		md.mine.run_full()
+	var names: Array = []
+	for lid in world.leagues:
+		var lg: LeagueData = world.leagues[lid]
+		if lg.plays_in_round(matchday()):
+			names.append(lg.short_name if lg.short_name != "" else lg.name)
+	finish_matchday(md)
+	return _add_news("matchday", "Englische Woche: %s spielen einen Spieltag ohne dich." % ", ".join(names))
 
 ## Komplettsimulation ohne Eingriffe (Tests, Schnellrechnung).
 ## Springt vorher per Tagessimulation zum Spieltagstermin.
@@ -768,6 +817,10 @@ func _apply_matchday_finances() -> void:
 	for cid in world.clubs:
 		var c: ClubData = world.clubs[cid]
 		var lg: LeagueData = world.leagues[c.league_id]
+		# An englischen Wochen pausieren die 18er-Ligen – dann fallen dort weder
+		# Zuschauereinnahmen noch Gehälter für diesen Spieltag an
+		if not lg.plays_in_round(matchday()):
+			continue
 		var f := lg.fixture_of(cid, matchday())
 		var ticket := 0
 		if not f.is_empty() and int(f.home) == cid:
@@ -806,16 +859,20 @@ func log_transaction(text: String, amount: int) -> void:
 ## Wertet die Saison aus (Meister, Auf-/Abstieg), altert Spieler, füllt Kader auf
 ## und erzeugt neue Spielpläne. Rückgabe: Zusammenfassung fürs UI.
 func end_season() -> Dictionary:
-	var l1: LeagueData = world.leagues[1]
-	var l2: LeagueData = world.leagues[2]
-	var t1 := l1.table()
-	var t2 := l2.table()
+	var tables := {}      # league_id -> Abschlusstabelle (Zeilen)
+	for lid in world.leagues:
+		tables[lid] = world.leagues[lid].table()
+
+	var display_tables: Array = []
+	for lid in [1, 2, 3, 4]:
+		if world.leagues.has(lid):
+			display_tables.append(_final_table(world.leagues[lid], tables[lid]))
 
 	var summary := {
 		"season": season_label(),
 		"season_year": int(world.season_year),
-		"champion1": club(t1[0].club_id).name,
-		"champion2": club(t2[0].club_id).name,
+		"champion1": club(tables[1][0].club_id).name,
+		"champion2": club(tables[2][0].club_id).name,
 		"relegated": [],
 		"promoted": [],
 		"retired": [],
@@ -823,11 +880,11 @@ func end_season() -> Dictionary:
 		"my_league_name": my_league().name,
 		# Abschlussdaten VOR jeder Veränderung sichern – danach sind Tabellen
 		# geleert, Statistiken zurückgesetzt und Spieler gealtert.
-		"tables": [_final_table(l1, t1, 15, -1), _final_table(l2, t2, -1, 3)],
+		"tables": display_tables,
 		"scorers": _season_scorers(),
 		"ratings": _season_best_rated(),
 		"my_squad": _my_season_squad(),
-		"my_row": _my_table_row(t1 if my_club().league_id == 1 else t2),
+		"my_row": _my_table_row(tables[my_club().league_id]),
 	}
 
 	# Saisonziel auswerten: Erfolg stärkt den Ruf, Misserfolg kostet ihn
@@ -854,17 +911,7 @@ func end_season() -> Dictionary:
 		coach_contract_years = 2
 	season_goal = _board_goal_for(my_club())
 
-	# Auf- und Abstieg (3 runter, 3 rauf)
-	for row in t1.slice(15):
-		club(row.club_id).league_id = 2
-		summary.relegated.append(club(row.club_id).name)
-	for row in t2.slice(0, 3):
-		club(row.club_id).league_id = 1
-		summary.promoted.append(club(row.club_id).name)
-	l1.club_ids.clear()
-	l2.club_ids.clear()
-	for cid in world.clubs:
-		world.leagues[world.clubs[cid].league_id].club_ids.append(cid)
+	_apply_promotion_and_relegation(tables, summary)
 
 	# Spieler entwickeln sich (VOR dem Statistik-Reset), altern, Verträge laufen ab
 	var retiring: Array = []
@@ -924,18 +971,31 @@ func end_season() -> Dictionary:
 		c.refresh_sponsor(world.players)
 
 	# Neue Saison
-	l1.fixtures = ScheduleGen.build_fixtures(l1.club_ids)
-	l2.fixtures = ScheduleGen.build_fixtures(l2.club_ids)
+	for lid in world.leagues:
+		var lg: LeagueData = world.leagues[lid]
+		lg.fixtures = ScheduleGen.build_league_fixtures(lg.club_ids)
 	world.matchday = 0
 	world.season_year = int(world.season_year) + 1
 	world.date = ScheduleGen.season_start(int(world.season_year))
 	world.matchday_dates = ScheduleGen.matchday_dates(int(world.season_year))
 	return summary
 
-## Abschlusstabelle einer Liga als reine Anzeigedaten. relegation_from ist der
-## erste Abstiegsplatz (0-basiert, -1 = keiner), promotion_to die Anzahl der
-## Aufstiegsplätze (-1 = keine).
-func _final_table(lg: LeagueData, rows: Array, relegation_from: int, promotion_to: int) -> Dictionary:
+## Auf- und Abstiegsregeln je Liga (Positionen 1-basiert gedacht):
+## up_direct   = direkte Aufstiegsplätze von oben
+## up_playoff  = 1, wenn der Platz danach in die Relegation muss
+## down_direct = direkte Abstiegsplätze von unten
+## down_playoff= 1, wenn der Platz darüber in die Relegation muss
+const LEAGUE_RULES := {
+	1: {"up_direct": 0, "up_playoff": 0, "down_direct": 2, "down_playoff": 1},
+	2: {"up_direct": 2, "up_playoff": 1, "down_direct": 2, "down_playoff": 1},
+	3: {"up_direct": 2, "up_playoff": 1, "down_direct": 4, "down_playoff": 0},
+	4: {"up_direct": 4, "up_playoff": 0, "down_direct": 0, "down_playoff": 0},
+}
+
+## Abschlusstabelle einer Liga als reine Anzeigedaten, Markierungen aus den
+## Auf-/Abstiegsregeln der Liga.
+func _final_table(lg: LeagueData, rows: Array) -> Dictionary:
+	var rules: Dictionary = LEAGUE_RULES.get(lg.id, LEAGUE_RULES[4])
 	var out: Array = []
 	for i in rows.size():
 		var row: Dictionary = rows[i]
@@ -943,17 +1003,21 @@ func _final_table(lg: LeagueData, rows: Array, relegation_from: int, promotion_t
 		var mark := ""
 		if i == 0:
 			mark = "champion"
-		elif promotion_to > 0 and i < promotion_to:
+		elif i < int(rules.up_direct):
 			mark = "promoted"
-		elif relegation_from >= 0 and i >= relegation_from:
+		elif int(rules.up_playoff) > 0 and i == int(rules.up_direct):
+			mark = "playoff_up"
+		elif i >= rows.size() - int(rules.down_direct):
 			mark = "relegated"
+		elif int(rules.down_playoff) > 0 and i == rows.size() - int(rules.down_direct) - 1:
+			mark = "playoff_down"
 		out.append({
 			"pos": i + 1, "club_id": c.id, "name": c.name, "short": c.short_name, "color": c.color,
 			"played": int(row.played), "won": int(row.won), "drawn": int(row.drawn), "lost": int(row.lost),
 			"gf": int(row.gf), "ga": int(row.ga), "diff": int(row.gf) - int(row.ga),
 			"points": int(row.points), "mark": mark, "mine": c.id == my_club_id,
 		})
-	return {"league": lg.name, "rows": out}
+	return {"league": lg.name, "league_id": lg.id, "playable": lg.playable, "rows": out}
 
 ## Zeile der eigenen Mannschaft aus der Abschlusstabelle.
 func _my_table_row(rows: Array) -> Dictionary:
@@ -1006,6 +1070,140 @@ func _season_best_rated() -> Array:
 			"mine": p.club_id == my_club_id})
 	list.sort_custom(func(a, b): return float(a.note) < float(b.note))
 	return list.slice(0, 10)
+
+## Setzt Auf- und Abstieg um – inklusive der Relegationsspiele zwischen dem
+## ersten Nichtabstiegsplatz oben und dem ersten Nichtaufstiegsplatz unten.
+## Die Zusammenfassung bekommt Bewegungen und Relegationsergebnisse.
+func _apply_promotion_and_relegation(tables: Dictionary, summary: Dictionary) -> void:
+	var moves := {}          # club_id -> neue Liga
+	var playoffs: Array = []
+
+	for lid in [1, 2, 3, 4]:
+		if not world.leagues.has(lid):
+			continue
+		var rules: Dictionary = LEAGUE_RULES[lid]
+		var rows: Array = tables[lid]
+		for i in int(rules.up_direct):
+			moves[int(rows[i].club_id)] = lid - 1
+		for i in int(rules.down_direct):
+			moves[int(rows[rows.size() - 1 - i].club_id)] = lid + 1
+
+	# Relegation: Der bedrohte Verein der oberen Liga gegen den besten
+	# Nichtaufsteiger der unteren – ein Spiel beim Höherklassigen.
+	for pair in [[1, 2], [2, 3]]:
+		var upper: int = pair[0]
+		var lower: int = pair[1]
+		if not (world.leagues.has(upper) and world.leagues.has(lower)):
+			continue
+		if int(LEAGUE_RULES[upper].down_playoff) == 0 or int(LEAGUE_RULES[lower].up_playoff) == 0:
+			continue
+		var upper_rows: Array = tables[upper]
+		var lower_rows: Array = tables[lower]
+		var keeper := club(int(upper_rows[upper_rows.size() - 1 - int(LEAGUE_RULES[upper].down_direct)].club_id))
+		var challenger := club(int(lower_rows[int(LEAGUE_RULES[lower].up_direct)].club_id))
+		var result := _play_relegation_match(keeper, challenger)
+		result["upper_league"] = world.leagues[upper].name
+		result["lower_league"] = world.leagues[lower].name
+		playoffs.append(result)
+		if not bool(result.keeper_stays):
+			moves[keeper.id] = lower
+			moves[challenger.id] = upper
+		_add_news("relegation", "Relegation %s: %s %d:%d %s – %s %s." % [
+			world.leagues[upper].name, keeper.name, int(result.hg), int(result.ag), challenger.name,
+			(keeper.name if bool(result.keeper_stays) else challenger.name),
+			("bleibt oben" if bool(result.keeper_stays) else "steigt auf")])
+
+	# Bewegungen anwenden und alle Ligen neu besetzen
+	var movements := {}
+	for lid in world.leagues:
+		movements[lid] = {"league": world.leagues[lid].name, "up": [], "down": []}
+	for cid in moves:
+		var c := club(cid)
+		var from_league: int = c.league_id
+		var to_league: int = int(moves[cid])
+		c.league_id = to_league
+		if to_league < from_league:
+			movements[to_league].up.append(c.name)
+		else:
+			movements[from_league].down.append(c.name)
+	for lid in world.leagues:
+		world.leagues[lid].club_ids.clear()
+	for cid in world.clubs:
+		world.leagues[world.clubs[cid].league_id].club_ids.append(cid)
+
+	summary["movements"] = []
+	for lid in [1, 2, 3, 4]:
+		if movements.has(lid):
+			summary.movements.append(movements[lid])
+	summary["playoffs"] = playoffs
+	# Für Übersicht und Tests: Wer ist neu in der Ersten Liga, wer musste raus?
+	summary["promoted"] = movements[1].up if movements.has(1) else []
+	summary["relegated"] = movements[1].down if movements.has(1) else []
+
+## Ein Relegationsspiel beim höherklassigen Verein. Unentschieden entscheidet
+## das Elfmeterschießen.
+func _play_relegation_match(keeper: ClubData, challenger: ClubData) -> Dictionary:
+	for c in [keeper, challenger]:
+		c.formation = c.pick_best_formation(world.players)
+		c.lineup = c.best_eleven(world.players)
+		c.lineup_spots = []
+	var sim := MatchSim.new()
+	sim.is_friendly = true   # zählt nicht für Saisonstatistik und Sperren
+	sim.setup(keeper, challenger, world.players)
+	sim.run_full()
+	var pens := [0, 0]
+	if sim.hg == sim.ag:
+		pens = _penalty_shootout(keeper, challenger)
+	var keeper_stays: bool = sim.hg > sim.ag or (sim.hg == sim.ag and pens[0] > pens[1])
+	return {
+		"home": keeper.name, "home_short": keeper.short_name, "home_color": keeper.color,
+		"away": challenger.name, "away_short": challenger.short_name, "away_color": challenger.color,
+		"hg": sim.hg, "ag": sim.ag, "pens_h": pens[0], "pens_a": pens[1],
+		"shootout": sim.hg == sim.ag, "keeper_stays": keeper_stays,
+		"winner": keeper.name if keeper_stays else challenger.name,
+		"mine": keeper.id == my_club_id or challenger.id == my_club_id,
+	}
+
+## Elfmeterschießen: Abschluss und Nervenstärke der Schützen gegen die Reflexe
+## des Torhüters – fünf Schüsse, dann Sudden Death.
+func _penalty_shootout(a: ClubData, b: ClubData) -> Array:
+	var goals := [0, 0]
+	var chance := [_penalty_chance(a, b), _penalty_chance(b, a)]
+	for i in 5:
+		for side in 2:
+			if randf() < chance[side]:
+				goals[side] += 1
+	var guard := 0
+	while goals[0] == goals[1] and guard < 20:
+		guard += 1
+		var scored := [randf() < chance[0], randf() < chance[1]]
+		if scored[0]:
+			goals[0] += 1
+		if scored[1]:
+			goals[1] += 1
+	if goals[0] == goals[1]:
+		goals[0] += 1   # Notbremse: irgendwer muss gewinnen
+	return goals
+
+func _penalty_chance(shooters: ClubData, defender: ClubData) -> float:
+	var quality := 0.0
+	var count := 0
+	for pid in shooters.lineup:
+		if not world.players.has(pid):
+			continue
+		var p: PlayerData = world.players[pid]
+		if p.pos == "TW":
+			continue
+		quality += (p.attr("abschluss") + p.attr("nerven")) / 2.0
+		count += 1
+	if count > 0:
+		quality /= count
+	var keeper_skill := 50.0
+	for pid in defender.lineup:
+		if world.players.has(pid) and world.players[pid].pos == "TW":
+			keeper_skill = float(world.players[pid].attr("reflexe"))
+			break
+	return clampf(0.70 + (quality - 60.0) * 0.0035 - (keeper_skill - 60.0) * 0.0022, 0.55, 0.92)
 
 ## Karriereende individuell statt Stichtag: Feldspieler hören meist mit 33–37 auf,
 ## Torhüter deutlich später (bis ~40), Stars hängen gern noch Jahre dran,
@@ -1090,6 +1288,8 @@ func season_offers() -> Array:
 		if cid == my_club_id:
 			continue
 		var c: ClubData = world.clubs[cid]
+		if not world.leagues[c.league_id].playable:
+			continue   # aus dem Unterbau kommen keine Trainerangebote
 		if c.base_strength > my_club().base_strength and absf(c.base_strength - reputation) <= 4.0:
 			candidates.append(cid)
 	candidates.shuffle()
@@ -1291,6 +1491,7 @@ func load_game(path: String) -> bool:
 	world = _world_from_dict(data.world)
 	if not data.world.has("retired"):
 		_migrate_economy_v012()
+	_migrate_lower_leagues_v031()
 	# Startaufstellungen slot-treu ausrichten (Spielstände vor dem Slot-System
 	# haben eine ungeordnete Elf – die Engine bewertet seitdem pro Formations-Slot)
 	for cid in world.clubs:
@@ -1309,6 +1510,59 @@ func _migrate_economy_v012() -> void:
 		var c: ClubData = world.clubs[cid]
 		c.refresh_sponsor(world.players)
 		c.budget = maxi(c.budget, int(c.salaries_per_matchday(world.players) * 34 * 0.35))
+
+## Migration für Spielstände vor v0.31.0: Dritte Liga und Regionalliga gab es
+## noch nicht. Die fehlenden Ligen samt Vereinen und Kadern werden aus den
+## Stammdaten nachgeladen; bereits vergangene Spieltage der laufenden Saison
+## werden nachsimuliert, damit die Tabellen stimmen.
+func _migrate_lower_leagues_v031() -> void:
+	var missing: Array = []
+	for def in Data.LEAGUE_DEFS:
+		if not world.leagues.has(int(def.id)):
+			missing.append(int(def.id))
+	if missing.is_empty():
+		return
+	for lg in Data.build_leagues():
+		if world.leagues.has(lg.id):
+			# Namen und Spielbarkeit aktualisieren, Bestand bleibt
+			world.leagues[lg.id].short_name = lg.short_name
+			world.leagues[lg.id].playable = lg.playable
+			continue
+		world.leagues[lg.id] = lg
+	Data.add_missing_clubs(world)
+	for lid in missing:
+		var lg: LeagueData = world.leagues[lid]
+		lg.fixtures = ScheduleGen.build_league_fixtures(lg.club_ids)
+		# Die bereits gespielten Spieltage der laufenden Saison nachholen
+		for f in lg.fixtures:
+			if int(f.round) >= matchday():
+				continue
+			var sim := MatchSim.new()
+			sim.is_friendly = true   # keine Sperren/Karten nachträglich verhängen
+			sim.setup(club(int(f.home)), club(int(f.away)), world.players)
+			sim.run_full()
+			f.played = true
+			f.hg = sim.hg
+			f.ag = sim.ag
+	# Der Spielplan der oberen Ligen liegt jetzt auf dem 38er-Raster
+	_remap_upper_league_rounds()
+	_add_news("liga", "Der Ligaunterbau wurde erweitert: Dritte Liga und Regionalliga sind ab sofort dabei.")
+
+## Alte Spielstände hatten 34 fortlaufende Spieltage. Im neuen Kalender liegen
+## die 18er-Ligen auf den 34 Samstagsterminen des 38er-Rasters.
+func _remap_upper_league_rounds() -> void:
+	if int(world.matchday_dates.size()) >= ScheduleGen.total_rounds():
+		return
+	var slots := ScheduleGen.saturday_slots()
+	for lid in [1, 2]:
+		if not world.leagues.has(lid):
+			continue
+		for f in world.leagues[lid].fixtures:
+			var r := int(f.round)
+			if r < slots.size():
+				f.round = int(slots[r])
+	world.matchday = int(slots[mini(int(world.matchday), slots.size() - 1)])
+	world.matchday_dates = ScheduleGen.matchday_dates(int(world.season_year))
 
 func _world_to_dict() -> Dictionary:
 	var players := {}

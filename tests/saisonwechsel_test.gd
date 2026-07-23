@@ -14,7 +14,10 @@ func _ready() -> void:
 	var start := Time.get_datetime_dict_from_unix_time(ScheduleGen.season_start(year))
 	assert(int(start.day) == 1 and int(start.month) == 7,
 		"Saisonstart ist %02d.%02d. statt 01.07." % [int(start.day), int(start.month)])
-	var last := Time.get_datetime_dict_from_unix_time(int(Game.world.matchday_dates[33]))
+	var dates: Array = Game.world.matchday_dates
+	assert(dates.size() == ScheduleGen.total_rounds(),
+		"Kalender hat %d statt %d Spieltagstermine" % [dates.size(), ScheduleGen.total_rounds()])
+	var last := Time.get_datetime_dict_from_unix_time(int(dates[dates.size() - 1]))
 	assert(int(last.month) == 5 or (int(last.month) == 6 and int(last.day) <= 7),
 		"Letzter Spieltag liegt am %02d.%02d. – erwartet Ende Mai" % [int(last.day), int(last.month)])
 	var season_end := Time.get_datetime_dict_from_unix_time(ScheduleGen.season_end(year))
@@ -55,20 +58,51 @@ func _ready() -> void:
 
 	assert(str(s.champion1) == champion_before, "Meister stimmt nicht mit der Abschlusstabelle ueberein")
 	var tables: Array = s.tables
-	assert(tables.size() == 2, "Es fehlen Abschlusstabellen")
+	assert(tables.size() == 4, "Es fehlen Abschlusstabellen (%d von 4)" % tables.size())
 	for t in tables:
 		var rows: Array = t.rows
-		assert(rows.size() == 18, "%s hat %d statt 18 Zeilen" % [t.league, rows.size()])
+		var expect_clubs: int = 18 if int(t.league_id) <= 2 else 20
+		var expect_games: int = 34 if int(t.league_id) <= 2 else 38
+		assert(rows.size() == expect_clubs, "%s hat %d statt %d Zeilen" % [t.league, rows.size(), expect_clubs])
 		var points_before := 999
 		for row in rows:
-			assert(int(row.played) == 34, "%s hat nur %d Spiele" % [row.name, int(row.played)])
+			assert(int(row.played) == expect_games,
+				"%s hat %d statt %d Spiele" % [row.name, int(row.played), expect_games])
 			assert(int(row.points) <= points_before, "Tabelle ist nicht sortiert")
 			points_before = int(row.points)
 		assert(str(rows[0].mark) == "champion", "Platz 1 ist nicht als Meister markiert")
-	assert(str(tables[0].rows[15].mark) == "relegated", "Platz 16 der Ersten Liga ist kein Absteiger")
+
+	# Erste Liga: 17./18. direkt runter, 16. in die Relegation
+	assert(str(tables[0].rows[16].mark) == "relegated", "Platz 17 der Ersten Liga ist kein Absteiger")
+	assert(str(tables[0].rows[15].mark) == "playoff_down", "Platz 16 der Ersten Liga spielt keine Relegation")
+	# Zweite Liga: 1./2. hoch, 3. Relegation, 17./18. runter, 16. Relegation
 	assert(str(tables[1].rows[1].mark) == "promoted", "Platz 2 der Zweiten Liga ist kein Aufsteiger")
-	assert(s.relegated.size() == 3 and s.promoted.size() == 3,
-		"Auf-/Abstieg: %d rauf, %d runter" % [s.promoted.size(), s.relegated.size()])
+	assert(str(tables[1].rows[2].mark) == "playoff_up", "Platz 3 der Zweiten Liga spielt keine Relegation")
+	assert(str(tables[1].rows[15].mark) == "playoff_down", "Platz 16 der Zweiten Liga spielt keine Relegation")
+	# Dritte Liga: 1./2. hoch, 3. Relegation, 17.–20. runter
+	assert(str(tables[2].rows[1].mark) == "promoted", "Platz 2 der Dritten Liga ist kein Aufsteiger")
+	assert(str(tables[2].rows[2].mark) == "playoff_up", "Platz 3 der Dritten Liga spielt keine Relegation")
+	for i in range(16, 20):
+		assert(str(tables[2].rows[i].mark) == "relegated",
+			"Platz %d der Dritten Liga ist kein Absteiger" % (i + 1))
+	# Regionalliga: die besten vier steigen auf, niemand steigt ab
+	for i in 4:
+		assert(str(tables[3].rows[i].mark) in ["champion", "promoted"],
+			"Platz %d der Regionalliga steigt nicht auf" % (i + 1))
+	assert(not bool(tables[3].playable), "Die Regionalliga darf nicht spielbar sein")
+
+	# Relegation: zwei Spiele, jeweils mit Sieger
+	var playoffs: Array = s.playoffs
+	assert(playoffs.size() == 2, "Es fehlen Relegationsspiele (%d von 2)" % playoffs.size())
+	for po in playoffs:
+		assert(str(po.winner) != "", "Relegationsspiel ohne Sieger")
+		if bool(po.shootout):
+			assert(int(po.pens_h) != int(po.pens_a), "Elfmeterschießen ohne Entscheidung")
+		print("Relegation %s: %s %d:%d %s → %s" % [po.upper_league, po.home, int(po.hg), int(po.ag), po.away, po.winner])
+
+	# Bilanz: Jede Liga behält ihre Größe
+	assert(s.promoted.size() == s.relegated.size(),
+		"Erste Liga: %d rauf, %d runter" % [s.promoted.size(), s.relegated.size()])
 
 	var scorers: Array = s.scorers
 	assert(not scorers.is_empty(), "Torjaegerliste ist leer")
@@ -88,10 +122,14 @@ func _ready() -> void:
 	assert(int(d.day) == 1 and int(d.month) == 7, "Neue Saison startet nicht am 1. Juli")
 	assert(str(Game.day_kind(Game.date_unix()).kind) == "preseason",
 		"1. Juli gilt als %s statt Vorbereitung" % Game.day_kind(Game.date_unix()).kind)
-	for lg_id in [1, 2]:
+	for lg_id in [1, 2, 3, 4]:
 		var lg: LeagueData = Game.world.leagues[lg_id]
-		assert(lg.club_ids.size() == 18, "%s hat %d Vereine" % [lg.name, lg.club_ids.size()])
-		assert(lg.fixtures.size() == 306, "%s hat %d Partien" % [lg.name, lg.fixtures.size()])
+		var want_clubs: int = 18 if lg_id <= 2 else 20
+		var want_games: int = 306 if lg_id <= 2 else 380
+		assert(lg.club_ids.size() == want_clubs, "%s hat %d Vereine" % [lg.name, lg.club_ids.size()])
+		assert(lg.fixtures.size() == want_games, "%s hat %d Partien" % [lg.name, lg.fixtures.size()])
+		assert(lg.own_rounds().size() == (34 if lg_id <= 2 else 38),
+			"%s hat %d Spieltage" % [lg.name, lg.own_rounds().size()])
 		for f in lg.fixtures:
 			assert(not f.played, "Neuer Spielplan enthaelt bereits gespielte Partien")
 	# Aufsteiger stehen jetzt wirklich in der Ersten Liga

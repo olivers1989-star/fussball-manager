@@ -309,8 +309,9 @@ func update_topbar() -> void:
 	_club_league_label.text = "%s · %s" % [Game.my_league().name, Game.manager_name]
 
 	_season_label.text = "%s · %s" % [Game.date_label(), Game.season_label()]
-	_position_label.text = "Spieltag %d/34 · Platz %d · %s" % [
-		mini(Game.matchday() + 1, 34), Game.my_league().position_of(Game.my_club_id), Game.my_league().name]
+	_position_label.text = "Spieltag %d/%d · Platz %d · %s" % [
+		Game.my_matchday_number(), Game.my_matchdays_total(),
+		Game.my_league().position_of(Game.my_club_id), Game.my_league().name]
 	_budget_label.text = Fmt.money(c.budget)
 
 	var f := Game.next_fixture(Game.my_club_id)
@@ -321,7 +322,7 @@ func update_topbar() -> void:
 	else:
 		var home := int(f.home) == c.id
 		var opponent := Game.club(int(f.away) if home else int(f.home))
-		var d := Time.get_datetime_dict_from_unix_time(Game.matchday_date(Game.matchday()))
+		var d := Time.get_datetime_dict_from_unix_time(Game.next_fixture_date(Game.my_club_id))
 		_next_match_label.text = "%s %s (%02d.%02d.)" % ["vs" if home else "bei", opponent.name, int(d.day), int(d.month)]
 
 	# Aktions-Button je nach Kalenderlage
@@ -329,7 +330,7 @@ func update_topbar() -> void:
 		_play_button.text = "🏁  Saison abschließen"
 	elif Game.season_over():
 		_play_button.text = "☀  Sommerpause  ⏩"
-	elif Game.is_matchday_today():
+	elif Game.my_match_today():
 		_play_button.text = "▶  Spieltag anpfeifen"
 	else:
 		_play_button.text = "Weiter  ⏩"
@@ -354,7 +355,7 @@ func _on_play_pressed() -> void:
 	if Game.season_rollover_due():
 		get_tree().change_scene_to_file("res://scenes/saison.tscn")
 		return
-	if Game.is_matchday_today():
+	if Game.my_match_today():
 		get_tree().change_scene_to_file("res://scenes/match.tscn")
 		return
 	_start_week_sim()
@@ -438,8 +439,20 @@ func _start_week_sim() -> void:
 	_sim_timer.start()
 
 func _sim_tick() -> void:
-	if Game.is_matchday_today() or Game.season_rollover_due():
+	if Game.season_rollover_due():
 		_finish_sim()
+		return
+	if Game.is_matchday_today():
+		# Englische Woche: Spielt nur die Dritte Liga bzw. Regionalliga, läuft
+		# der Spieltag automatisch durch und die Woche geht weiter.
+		if Game.my_match_today():
+			_finish_sim()
+			return
+		var note := Game.simulate_matchday_without_me()
+		_sim_feed.add_item("%s  –  %s" % [note.day, note.text])
+		_sim_feed.ensure_current_is_visible()
+		_update_sim_display()
+		update_topbar()
 		return
 	var r: Dictionary = Game.advance_day()
 	for e in r.news:
@@ -465,7 +478,7 @@ func _sim_tick() -> void:
 		_sim_timer.stop()
 		_show_prep_dialog()
 		return
-	if Game.is_matchday_today():
+	if Game.my_match_today():
 		_finish_sim()
 
 ## Spielvorbereitungs-Overlay: kompakte Karte mit Gegner-Details und Matchplan-Wahl.
@@ -816,7 +829,7 @@ func _finish_sim() -> void:
 	_sim_timer.stop()
 	_sim_overlay.visible = false
 	update_topbar()
-	if Game.is_matchday_today():
+	if Game.my_match_today():
 		_toast.text = "Spieltag erreicht – Anpfiff, wenn du bereit bist!"
 	elif Game.season_rollover_due():
 		_toast.text = "Der 1. Juli ist da – jetzt die Saison abschließen!"

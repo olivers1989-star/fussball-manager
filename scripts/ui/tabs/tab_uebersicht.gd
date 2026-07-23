@@ -171,9 +171,9 @@ func _refresh_match_card(c: ClubData) -> void:
 	duel.add_child(UITheme.club_badge(away_club.short_name, Color(away_club.color), 48))
 
 	var when := Label.new()
-	var d := Time.get_datetime_dict_from_unix_time(Game.matchday_date(Game.matchday()))
+	var d := Time.get_datetime_dict_from_unix_time(Game.next_fixture_date(Game.my_club_id))
 	when.text = "Spieltag %d  ·  %s, %02d.%02d.%d  ·  %s" % [
-		Game.matchday() + 1, Game.WEEKDAYS[int(d.weekday)], int(d.day), int(d.month), int(d.year), home_club.stadium]
+		Game.my_matchday_number(), Game.WEEKDAYS[int(d.weekday)], int(d.day), int(d.month), int(d.year), home_club.stadium]
 	when.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	when.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	_match_inner.add_child(when)

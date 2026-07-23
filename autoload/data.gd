@@ -24,7 +24,7 @@ func _load_json(path: String) -> Variant:
 		return null
 	return JSON.parse_string(f.get_as_text())
 
-## Erzeugt eine komplette neue Spielwelt: 2 Ligen, 36 Vereine, generierte Kader.
+## Erzeugt eine komplette neue Spielwelt: 4 Ligen, 76 Vereine, feste Kader.
 func generate_world() -> Dictionary:
 	var world := {
 		"season_year": 2026,
@@ -37,16 +37,8 @@ func generate_world() -> Dictionary:
 		"leagues": {},   # id -> LeagueData
 	}
 
-	var l1 := LeagueData.new()
-	l1.id = 1
-	l1.name = "Erste Liga"
-	l1.tier = 1
-	var l2 := LeagueData.new()
-	l2.id = 2
-	l2.name = "Zweite Liga"
-	l2.tier = 2
-	world.leagues[1] = l1
-	world.leagues[2] = l2
+	for lg in build_leagues():
+		world.leagues[lg.id] = lg
 
 	var sponsor_pool := sponsors.duplicate()
 	sponsor_pool.shuffle()
@@ -87,9 +79,69 @@ func generate_world() -> Dictionary:
 		c.refresh_sponsor(world.players)
 		c.budget = maxi(int(c.salaries_per_matchday(world.players) * 34 * 0.35), 500000)
 
-	l1.fixtures = ScheduleGen.build_fixtures(l1.club_ids)
-	l2.fixtures = ScheduleGen.build_fixtures(l2.club_ids)
+	for lid in world.leagues:
+		var lg: LeagueData = world.leagues[lid]
+		lg.fixtures = ScheduleGen.build_league_fixtures(lg.club_ids)
 	return world
+
+## Der Ligaunterbau des Spiels. Die Regionalliga ist NICHT spielbar – sie läuft
+## nur mit, damit Vereine in die Dritte Liga aufsteigen können.
+const LEAGUE_DEFS := [
+	{"id": 1, "name": "Erste Liga", "short": "1. Liga", "tier": 1, "playable": true},
+	{"id": 2, "name": "Zweite Liga", "short": "2. Liga", "tier": 2, "playable": true},
+	{"id": 3, "name": "Dritte Liga", "short": "3. Liga", "tier": 3, "playable": true},
+	{"id": 4, "name": "Regionalliga", "short": "RL", "tier": 4, "playable": false},
+]
+
+static func build_leagues() -> Array:
+	var out: Array = []
+	for def in LEAGUE_DEFS:
+		var lg := LeagueData.new()
+		lg.id = int(def.id)
+		lg.name = str(def.name)
+		lg.short_name = str(def.short)
+		lg.tier = int(def.tier)
+		lg.playable = bool(def.playable)
+		out.append(lg)
+	return out
+
+## Ergänzt eine bestehende Welt um Vereine aus clubs.json, die noch fehlen –
+## für Spielstände, die vor der Erweiterung des Ligaunterbaus entstanden sind.
+func add_missing_clubs(world: Dictionary) -> void:
+	var db_players := _load_players_db()
+	var sponsor_pool := sponsors.duplicate()
+	for i in club_defs.size():
+		var club_id := i + 1
+		if world.clubs.has(club_id):
+			continue
+		var def: Dictionary = club_defs[i]
+		var c := ClubData.new()
+		c.id = club_id
+		c.name = def.name
+		c.short_name = def.short
+		c.city = def.city
+		c.stadium = def.stadium
+		c.capacity = int(def.capacity)
+		c.color = def.color
+		c.base_strength = int(def.strength)
+		c.league_id = int(def.league)
+		c.sponsor_name = sponsor_pool[i % sponsor_pool.size()]
+		c.chairman = def.get("chairman", "")
+		world.clubs[c.id] = c
+		if world.leagues.has(c.league_id):
+			world.leagues[c.league_id].club_ids.append(c.id)
+		if db_players.has(c.id):
+			for entry in db_players[c.id]:
+				_create_player_from_db(world, c, entry)
+		else:
+			_generate_squad(world, c)
+		for youth_no in 3:
+			var yp := create_youth_player(world, c, PlayerData.POSITIONS.pick_random())
+			if world.has("youth_ids"):
+				world.youth_ids.append(yp.id)
+		c.lineup = c.best_eleven(world.players)
+		c.refresh_sponsor(world.players)
+		c.budget = maxi(int(c.salaries_per_matchday(world.players) * 34 * 0.35), 500000)
 
 ## Lädt die feste Spielerdatenbank (data/players.json), gruppiert nach Verein.
 func _load_players_db() -> Dictionary:

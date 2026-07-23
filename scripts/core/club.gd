@@ -289,7 +289,11 @@ func salaries_per_matchday(all_players: Dictionary) -> int:
 	return int(salaries_per_month(all_players) * 12.0 / 34.0)
 
 func ticket_price() -> int:
-	return 35 if league_id == 1 else 20
+	match league_id:
+		1: return 35
+		2: return 20
+		3: return 14
+		_: return 10
 
 ## Erwartete Stadionauslastung (ohne Tagesschwankung).
 func expected_fill() -> float:

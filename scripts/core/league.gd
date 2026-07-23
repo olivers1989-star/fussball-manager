@@ -4,12 +4,59 @@ extends RefCounted
 
 var id: int = 1
 var name: String = ""
+var short_name: String = ""
 var tier: int = 1
+var playable := true       # false = Unterbau, wird nur mitsimuliert
 var club_ids: Array = []
 var fixtures: Array = []   # Dictionaries: {round, home, away, played, hg, ag}
 
 func rounds_total() -> int:
 	return (club_ids.size() - 1) * 2
+
+## Die Spieltags-Slots dieser Liga im gemeinsamen Kalender, aufsteigend.
+## Ligen mit 18 Vereinen nutzen nur 34 der 38 Termine – die vier englischen
+## Wochen gehören den 20er-Ligen.
+func own_rounds() -> Array:
+	var seen := {}
+	for f in fixtures:
+		seen[int(f.round)] = true
+	var rounds: Array = seen.keys()
+	rounds.sort()
+	return rounds
+
+## Der wievielte Spieltag DIESER Liga ist der globale Slot? 0, wenn sie an
+## diesem Termin nicht spielt.
+func matchday_number(global_round: int) -> int:
+	return own_rounds().find(global_round) + 1
+
+## Anzahl gespielter Spieltage bis einschließlich des globalen Slots.
+func matchdays_done(global_round: int) -> int:
+	var done := 0
+	for r in own_rounds():
+		if r < global_round:
+			done += 1
+	return done
+
+func plays_in_round(r: int) -> bool:
+	for f in fixtures:
+		if int(f.round) == r:
+			return true
+	return false
+
+## Nächste Partie eines Vereins ab einem Spieltags-Slot (auch wenn die Liga an
+## diesem Termin pausiert).
+func next_fixture_of(p_club_id: int, from_round: int) -> Dictionary:
+	var best := {}
+	var best_round := 1 << 30
+	for f in fixtures:
+		if f.played or int(f.round) < from_round:
+			continue
+		if int(f.home) != p_club_id and int(f.away) != p_club_id:
+			continue
+		if int(f.round) < best_round:
+			best_round = int(f.round)
+			best = f
+	return best
 
 func fixtures_for_round(r: int) -> Array:
 	return fixtures.filter(func(f): return int(f.round) == r)
@@ -76,13 +123,16 @@ func position_of(p_club_id: int) -> int:
 	return 0
 
 func to_dict() -> Dictionary:
-	return {"id": id, "name": name, "tier": tier, "clubs": club_ids, "fixtures": fixtures}
+	return {"id": id, "name": name, "short": short_name, "tier": tier,
+		"playable": playable, "clubs": club_ids, "fixtures": fixtures}
 
 static func from_dict(d: Dictionary) -> LeagueData:
 	var l := LeagueData.new()
 	l.id = int(d.id)
 	l.name = d.name
+	l.short_name = str(d.get("short", d.name))
 	l.tier = int(d.tier)
+	l.playable = bool(d.get("playable", true))
 	for cid in d.clubs:
 		l.club_ids.append(int(cid))
 	for f in d.fixtures:

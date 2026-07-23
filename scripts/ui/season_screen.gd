@@ -8,12 +8,17 @@ extends Control
 const MARK_COLORS := {
 	"champion": Color("#e3b341"),
 	"promoted": Color("#22c55e"),
+	"playoff_up": Color("#facc15"),
+	"playoff_down": Color("#facc15"),
 	"relegated": Color("#f87171"),
 }
 
 var _s := {}                  # Zusammenfassung aus Game.end_season()
 var _old_season := ""
 var _new_season := ""
+var _table_stack: VBoxContainer
+var _table_pages: Array = []
+var _table_buttons: Array = []
 
 func _ready() -> void:
 	if not Game.initialized:
@@ -48,9 +53,9 @@ func _build_ui() -> void:
 	columns.add_theme_constant_override("separation", 10)
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(columns)
-	var tables: Array = _s.get("tables", [])
-	for t in tables:
-		columns.add_child(_build_table_card(t))
+	# Vier Ligen passen nicht nebeneinander – Reiter je Liga, Voreinstellung ist
+	# die eigene.
+	columns.add_child(_build_tables_card())
 	columns.add_child(_build_side_column())
 
 	var footer := HBoxContainer.new()
@@ -176,10 +181,56 @@ func _champion_card(league_name: String, top: Dictionary) -> PanelContainer:
 
 # ------------------------------------------------------------------ Tabellen
 
-func _build_table_card(t: Dictionary) -> PanelContainer:
-	var card := _card("📊 Abschlusstabelle %s" % str(t.league))
+## Alle Abschlusstabellen in einer Karte, umschaltbar über Ligareiter.
+func _build_tables_card() -> PanelContainer:
+	var card := _card("📊 Abschlusstabellen")
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.size_flags_stretch_ratio = 1.6
 	var box: VBoxContainer = card.get_child(0)
+
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 6)
+	box.add_child(tabs)
+	_table_stack = VBoxContainer.new()
+	_table_stack.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(_table_stack)
+
+	var group := ButtonGroup.new()
+	var tables: Array = _s.get("tables", [])
+	var my_league_id: int = Game.my_club().league_id
+	for i in tables.size():
+		var t: Dictionary = tables[i]
+		var b := Button.new()
+		b.text = str(t.league)
+		if not bool(t.get("playable", true)):
+			b.text += " (Unterbau)"
+		b.toggle_mode = true
+		b.button_group = group
+		b.focus_mode = Control.FOCUS_NONE
+		b.pressed.connect(_show_table.bind(i))
+		tabs.add_child(b)
+		_table_buttons.append(b)
+		var page := _build_table_page(t)
+		page.visible = false
+		_table_stack.add_child(page)
+		_table_pages.append(page)
+	var start := 0
+	for i in tables.size():
+		if int(tables[i].get("league_id", 0)) == my_league_id:
+			start = i
+	_show_table(start)
+	if start < _table_buttons.size():
+		_table_buttons[start].set_pressed_no_signal(true)
+	return card
+
+func _show_table(index: int) -> void:
+	for i in _table_pages.size():
+		_table_pages[i].visible = i == index
+
+func _build_table_page(t: Dictionary) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 4)
@@ -208,11 +259,11 @@ func _build_table_card(t: Dictionary) -> PanelContainer:
 		rows_box.add_child(_table_row(row))
 
 	var legend := Label.new()
-	legend.text = "🏆 Meister   ⬆ Aufstieg   ⬇ Abstieg"
+	legend.text = "🏆 Meister   ⬆ Aufstieg   ⚖ Relegation   ⬇ Abstieg"
 	legend.add_theme_font_size_override("font_size", 11)
 	legend.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	box.add_child(legend)
-	return card
+	return box
 
 func _table_row(row: Dictionary) -> PanelContainer:
 	var mark := str(row.get("mark", ""))
@@ -327,25 +378,91 @@ func _build_side_column() -> Control:
 			inner.add_child(_note("🌱  %s" % str(entry)))
 	return col
 
-## Auf- und Abstieg auf einen Blick.
+## Relegationsspiele und die Bewegungen zwischen allen Ligen.
 func _movement_card() -> PanelContainer:
-	var card := _card("🔁 Auf- und Abstieg")
+	var card := _card("🔁 Relegation, Auf- und Abstieg")
 	var box: VBoxContainer = card.get_child(0)
-	var up: Array = _s.get("promoted", [])
-	var down: Array = _s.get("relegated", [])
-	var up_label := Label.new()
-	up_label.text = "⬆  Aufsteiger: %s" % (", ".join(up) if not up.is_empty() else "–")
-	up_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	up_label.add_theme_font_size_override("font_size", 13)
-	up_label.add_theme_color_override("font_color", MARK_COLORS.promoted)
-	box.add_child(up_label)
-	var down_label := Label.new()
-	down_label.text = "⬇  Absteiger: %s" % (", ".join(down) if not down.is_empty() else "–")
-	down_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	down_label.add_theme_font_size_override("font_size", 13)
-	down_label.add_theme_color_override("font_color", MARK_COLORS.relegated)
-	box.add_child(down_label)
+
+	for entry in _s.get("playoffs", []):
+		box.add_child(_playoff_row(entry))
+
+	for m in _s.get("movements", []):
+		var up: Array = m.get("up", [])
+		var down: Array = m.get("down", [])
+		if up.is_empty() and down.is_empty():
+			continue
+		var head := Label.new()
+		head.text = str(m.league)
+		head.add_theme_font_size_override("font_size", 12)
+		head.add_theme_color_override("font_color", UITheme.TEXT_DIM)
+		box.add_child(head)
+		if not up.is_empty():
+			box.add_child(_move_line("⬆  Neu dabei: %s" % ", ".join(up), MARK_COLORS.promoted))
+		if not down.is_empty():
+			box.add_child(_move_line("⬇  Abgestiegen: %s" % ", ".join(down), MARK_COLORS.relegated))
 	return card
+
+func _move_line(text: String, color: Color) -> Label:
+	var l := Label.new()
+	l.text = "   " + text
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", color)
+	return l
+
+## Ein Relegationsspiel mit Wappen, Ergebnis und ggf. Elfmeterschießen.
+func _playoff_row(entry: Dictionary) -> PanelContainer:
+	var panel := PanelContainer.new()
+	var mine: bool = bool(entry.get("mine", false))
+	var sb := UITheme.box(Color(0.16, 0.13, 0.04, 1.0), 6, MARK_COLORS.playoff_up if mine else UITheme.BORDER)
+	sb.set_content_margin_all(6)
+	panel.add_theme_stylebox_override("panel", sb)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 2)
+	panel.add_child(v)
+
+	var head := Label.new()
+	head.text = "⚖  Relegation zur %s" % str(entry.get("upper_league", ""))
+	head.add_theme_font_size_override("font_size", 11)
+	head.add_theme_color_override("font_color", MARK_COLORS.playoff_up)
+	v.add_child(head)
+
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 5)
+	v.add_child(line)
+	var hn := Label.new()
+	hn.text = str(entry.home)
+	hn.clip_text = true
+	hn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hn.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	hn.add_theme_font_size_override("font_size", 12)
+	line.add_child(hn)
+	line.add_child(UITheme.club_badge(str(entry.home_short), Color(str(entry.home_color)), 20))
+	var score := Label.new()
+	score.text = "%d : %d" % [int(entry.hg), int(entry.ag)]
+	score.custom_minimum_size = Vector2(48, 0)
+	score.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	score.add_theme_font_size_override("font_size", 14)
+	line.add_child(score)
+	line.add_child(UITheme.club_badge(str(entry.away_short), Color(str(entry.away_color)), 20))
+	var an := Label.new()
+	an.text = str(entry.away)
+	an.clip_text = true
+	an.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	an.add_theme_font_size_override("font_size", 12)
+	line.add_child(an)
+
+	var result := Label.new()
+	var text := "%s %s" % [str(entry.winner),
+		"bleibt in der %s" % str(entry.upper_league) if bool(entry.keeper_stays) else "steigt auf"]
+	if bool(entry.get("shootout", false)):
+		text += "   ·   Elfmeterschießen %d:%d" % [int(entry.pens_h), int(entry.pens_a)]
+	result.text = text
+	result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	result.add_theme_font_size_override("font_size", 12)
+	result.add_theme_color_override("font_color", UITheme.ACCENT if bool(entry.keeper_stays) else MARK_COLORS.promoted)
+	v.add_child(result)
+	return panel
 
 # ------------------------------------------------------------------ Bausteine
 
