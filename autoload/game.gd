@@ -63,6 +63,7 @@ var coach_exit_clause := false # Ausstiegsklausel: erlaubt den ablösefreien Wec
 var coach_money := 0           # Dein persönliches Trainerkonto (Gehalt + Prämien)
 var season_goal := {}          # Saisonziel des Vorstands: {text, position}
 var season_just_rolled := false  # true direkt nach dem Saisonabschluss (Hub zeigt Angebote)
+var match_context := "league"    # "league" oder "cup" – welches Spiel der Match-Bildschirm zeigt
 var lineup_presets: Array = [] # gespeicherte Aufstellungen: {name, formation, lineup, spots, bench}
 var pick_weights := {"str": 1.0, "fresh": 0.4, "form": 0.4}  # Kriterien der Auto-Aufstellung
 var my_club_id := -1
@@ -104,6 +105,241 @@ func new_game(p_club_id: int) -> void:
 	news.clear()
 	initialized = true
 	my_club().budget = int(my_club().budget * DIFFICULTY_FACTORS.get(difficulty, 1.0))
+	_build_cup()
+
+# ------------------------------------------------------------------ Deutscher Pokal
+
+var cup: CupData = null
+
+## Sechs Pokaltermine über die Saison verteilt (jeweils mittwochs, damit sie
+## nicht mit den Samstags-Spieltagen kollidieren). Das Finale liegt in der
+## Sommerpause auf neutralem Platz.
+func _cup_dates(y: int) -> Array:
+	var targets := [
+		[y, 8, 12], [y, 10, 28], [y, 12, 3],      # 1. Runde, 2. Runde, Achtelfinale
+		[y + 1, 2, 4], [y + 1, 4, 8], [y + 1, 6, 6],  # Viertel-, Halbfinale, Finale
+	]
+	var dates: Array = []
+	for t in targets:
+		var unix := int(Time.get_unix_time_from_datetime_dict({
+			"year": t[0], "month": t[1], "day": t[2], "hour": 15, "minute": 0, "second": 0}))
+		# Auf einen Tag schieben, der kein Ligaspieltag ist
+		while _is_matchday_date(unix):
+			unix += DAY
+		dates.append(unix)
+	return dates
+
+func _is_matchday_date(unix: int) -> bool:
+	var day := unix - (unix % DAY)
+	for d in world.matchday_dates:
+		if int(d) - (int(d) % DAY) == day:
+			return true
+	return false
+
+## Baut einen frischen Pokalwettbewerb für die aktuelle Saison.
+func _build_cup() -> void:
+	cup = CupData.new()
+	cup.year = int(world.season_year)
+	cup.round_dates = _cup_dates(int(world.season_year))
+	cup.round = 0
+	cup.pairings = _cup_draw(_cup_qualified(), 0)
+
+## Die 64 Teilnehmer: alle 36 Erst-/Zweitligisten, die vier stärksten
+## Drittligisten und 24 Amateurvertreter (stärkste Vereine der unteren Ligen,
+## mindestens einer je Regionalliga-Staffel). Zweitmannschaften sind gesperrt.
+func _cup_qualified() -> Array:
+	var teams: Array = []
+	for lid in [1, 2]:
+		for cid in world.leagues[lid].club_ids:
+			teams.append(cid)
+	# Dritte Liga: nach Grundstärke, ohne Zweitmannschaften
+	var l3: Array = []
+	for cid in world.leagues[3].club_ids:
+		if not club(cid).is_reserve():
+			l3.append(cid)
+	l3.sort_custom(func(a, b): return club(a).base_strength > club(b).base_strength)
+	for i in mini(4, l3.size()):
+		teams.append(l3[i])
+
+	# Amateurpool: restliche Drittligisten + alle Regionalligisten (keine Reserven)
+	var pool: Array = l3.slice(4)
+	for lid in Data.REGIONAL_LEAGUES:
+		for cid in world.leagues[lid].club_ids:
+			if not club(cid).is_reserve():
+				pool.append(cid)
+	pool.sort_custom(func(a, b): return club(a).base_strength > club(b).base_strength)
+
+	# Mindestens ein Vertreter je Staffel (der stärkste), dann nach Stärke auffüllen
+	var amateurs: Array = []
+	for lid in Data.REGIONAL_LEAGUES:
+		var best := -1
+		for cid in world.leagues[lid].club_ids:
+			if club(cid).is_reserve():
+				continue
+			if best < 0 or club(cid).base_strength > club(best).base_strength:
+				best = cid
+		if best > 0 and not amateurs.has(best):
+			amateurs.append(best)
+	for cid in pool:
+		if amateurs.size() >= 24:
+			break
+		if not amateurs.has(cid):
+			amateurs.append(cid)
+	teams.append_array(amateurs.slice(0, 24))
+	return teams
+
+## Auslosung einer Runde. In den ersten beiden Runden hat der klassentiefere
+## Verein Heimrecht; die 1. Runde paart möglichst Profi gegen Amateur. Ab dem
+## Achtelfinale wird frei gelost.
+func _cup_draw(teams: Array, round_idx: int) -> Array:
+	var pairings: Array = []
+	if round_idx == 0:
+		# Profis (1./2. Liga) und die übrigen (Amateurpot) trennen
+		var pros: Array = []
+		var others: Array = []
+		for cid in teams:
+			if club(cid).league_id <= 2:
+				pros.append(cid)
+			else:
+				others.append(cid)
+		pros.shuffle()
+		others.shuffle()
+		# Jeder Amateur bekommt einen Profi (Amateur hat Heimrecht)
+		for cid in others:
+			var pro: int = pros.pop_back()
+			pairings.append(_cup_pair(cid, pro))
+		# Restliche Profis untereinander
+		while pros.size() >= 2:
+			pairings.append(_cup_pair(pros.pop_back(), pros.pop_back()))
+		return pairings
+
+	# Ab Runde 2: freie Auslosung, in Runde 2 hat der Tiefere Heimrecht
+	var pot: Array = teams.duplicate()
+	pot.shuffle()
+	var lower_hosts := round_idx == 1
+	while pot.size() >= 2:
+		var a: int = pot.pop_back()
+		var b: int = pot.pop_back()
+		if lower_hosts and club(a).league_id < club(b).league_id:
+			var tmp := a; a = b; b = tmp   # b (tiefer) nach vorn = Heimrecht
+		pairings.append(_cup_pair(a, b))
+	return pairings
+
+## Neue Paarung; der klassentiefere Verein bekommt Heimrecht (home = a).
+func _cup_pair(home: int, away: int) -> Dictionary:
+	if club(away).league_id > club(home).league_id:
+		var tmp := home; home = away; away = tmp
+	return {"home": home, "away": away, "played": false, "hg": 0, "ag": 0,
+		"ph": 0, "pa": 0, "extra": false, "shootout": false, "winner": 0}
+
+## Steht heute ein Pokalspiel an, an dem MEIN Verein beteiligt ist?
+func is_cup_day() -> bool:
+	if cup == null or cup.is_finished() or cup.round >= CupData.ROUND_COUNT:
+		return false
+	if cup.round >= cup.round_dates.size():
+		return false
+	if date_unix() < int(cup.round_dates[cup.round]):
+		return false
+	return cup.round_played() == false and cup.alive(my_club_id)
+
+## Ist die aktuelle Pokalrunde fällig (Termin erreicht, noch nicht gespielt)?
+func cup_round_due() -> bool:
+	if cup == null or cup.is_finished() or cup.round >= cup.round_dates.size():
+		return false
+	return date_unix() >= int(cup.round_dates[cup.round]) and not cup.round_played()
+
+## Meine Paarung in der aktuellen Runde (leer, wenn raus).
+func cup_my_pairing() -> Dictionary:
+	return cup.pairing_of(my_club_id) if cup != null else {}
+
+## Spielt die aktuelle Pokalrunde. Ist my_result gesetzt (vom Spielbildschirm),
+## wird die eigene Partie damit übernommen, alle übrigen automatisch simuliert.
+func play_cup_round(my_result: Dictionary = {}) -> void:
+	if cup == null or cup.round_played():
+		return
+	var is_final := cup.round == CupData.ROUND_COUNT - 1
+	for p in cup.pairings:
+		if bool(p.played):
+			continue
+		var involves_me: bool = int(p.home) == my_club_id or int(p.away) == my_club_id
+		if involves_me and not my_result.is_empty():
+			p.hg = int(my_result.hg); p.ag = int(my_result.ag)
+			p.ph = int(my_result.get("ph", 0)); p.pa = int(my_result.get("pa", 0))
+			p.extra = bool(my_result.get("extra", false))
+			p.shootout = bool(my_result.get("shootout", false))
+			p.winner = int(my_result.winner)
+		else:
+			var r := _play_cup_match(club(int(p.home)), club(int(p.away)), is_final)
+			p.hg = r.hg; p.ag = r.ag; p.ph = r.ph; p.pa = r.pa
+			p.extra = r.extra; p.shootout = r.shootout; p.winner = r.winner
+		p.played = true
+
+	# Runde abschließen: Sieger in die nächste Runde
+	var winners: Array = []
+	for p in cup.pairings:
+		winners.append(int(p.winner))
+	cup.history.append(cup.pairings.duplicate(true))
+	if cup.round == CupData.ROUND_COUNT - 1:
+		cup.champion = winners[0]
+		_add_news("pokal", "%s gewinnt den Pokal!" % club(cup.champion).name)
+		_apply_cup_reward(cup.champion)
+	else:
+		cup.round += 1
+		cup.pairings = _cup_draw(winners, cup.round)
+		if cup.alive(my_club_id):
+			var opp := cup_my_pairing()
+			var other: int = int(opp.away) if int(opp.home) == my_club_id else int(opp.home)
+			_add_news("pokal", "Pokal, %s: Auslosung gegen %s." % [cup.round_name(cup.round), club(other).name])
+
+## Ein Pokalspiel als K.-o.-Duell: Verlängerung und Elfmeterschießen bei
+## Gleichstand. neutral = Finale (kein Heimvorteil).
+func _play_cup_match(home: ClubData, away: ClubData, neutral: bool = false) -> Dictionary:
+	for c in [home, away]:
+		c.formation = c.pick_best_formation(world.players)
+		c.lineup = c.best_eleven(world.players)
+		c.lineup_spots = []
+	var sim := MatchSim.new()
+	sim.is_friendly = true   # zählt nicht für Liga-Statistik/Sperren
+	sim.knockout = true
+	sim.neutral = neutral
+	sim.setup(home, away, world.players)
+	sim.run_full()
+	if sim.hg == sim.ag:
+		sim.run_extra_time()
+	var pens := [0, 0]
+	if sim.hg == sim.ag:
+		pens = _penalty_shootout(home, away)
+	var home_wins: bool = sim.hg > sim.ag or (sim.hg == sim.ag and pens[0] > pens[1])
+	return {"hg": sim.hg, "ag": sim.ag, "ph": pens[0], "pa": pens[1],
+		"extra": sim.minute > 90, "shootout": pens[0] + pens[1] > 0,
+		"winner": home.id if home_wins else away.id}
+
+## Für den Spielbildschirm: das eigene Pokalspiel als MatchSim vorbereiten.
+func start_cup_match() -> MatchSim:
+	var p := cup_my_pairing()
+	if p.is_empty():
+		return null
+	var home := club(int(p.home))
+	var away := club(int(p.away))
+	for c in [home, away]:
+		if c.id != my_club_id:
+			c.formation = c.pick_best_formation(world.players)
+			c.lineup = c.best_eleven(world.players)
+			c.lineup_spots = []
+	var sim := MatchSim.new()
+	sim.is_friendly = true
+	sim.knockout = true
+	sim.neutral = cup.round == CupData.ROUND_COUNT - 1
+	sim.setup(home, away, world.players)
+	sim.league_name = "Pokal · %s" % cup.round_name(cup.round)
+	return sim
+
+## Preisgeld und Ruf für den Pokalsieger.
+func _apply_cup_reward(cid: int) -> void:
+	club(cid).budget += 6000000
+	if cid == my_club_id:
+		reputation += 3.0
+		log_transaction("Pokalsieg – Prämie", 6000000)
 
 # ------------------------------------------------------------------ Trainerprofile (wiederverwendbar)
 
@@ -328,6 +564,16 @@ func advance_day() -> Dictionary:
 	var result := _daily_events()
 	# Spielvorbereitung: der Tag vor dem Spieltag gehört dem Matchplan (Popup im Hub)
 	result["prep"] = days_until_matchday() == 1 and not season_over()
+	# Pokalrunde fällig: spielt mein Verein mit, hält der Wochendurchlauf an;
+	# sonst läuft die Runde automatisch durch.
+	if cup_round_due():
+		if cup.alive(my_club_id):
+			result["cup"] = true
+		else:
+			var rn := cup.round_name(cup.round)
+			play_cup_round()
+			var champ := " – %s ist Pokalsieger!" % club(cup.champion).name if cup.is_finished() else ""
+			result.news.append(_add_news("pokal", "Pokal: %s gespielt.%s" % [rn, champ]))
 	return result
 
 ## Meldung nach der Matchplan-Wahl in der Spielvorbereitung.
@@ -993,6 +1239,7 @@ func end_season() -> Dictionary:
 	world.season_year = int(world.season_year) + 1
 	world.date = ScheduleGen.season_start(int(world.season_year))
 	world.matchday_dates = ScheduleGen.matchday_dates(int(world.season_year))
+	_build_cup()   # frischer Pokal für die neue Saison
 	return summary
 
 ## Auf- und Abstiegsregeln je Liga (Positionen 1-basiert gedacht):
@@ -1650,6 +1897,7 @@ func save_game(custom_name: String = "") -> String:
 		"world": _world_to_dict(),
 		"transactions": transactions,
 		"news": news,
+		"cup": cup.to_dict() if cup != null else {},
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
@@ -1740,6 +1988,12 @@ func load_game(path: String) -> bool:
 	# haben eine ungeordnete Elf – die Engine bewertet seitdem pro Formations-Slot)
 	for cid in world.clubs:
 		world.clubs[cid].align_lineup(world.players)
+	# Pokal laden (oder für alte Spielstände neu aufbauen)
+	var cup_data: Dictionary = data.get("cup", {})
+	if cup_data.is_empty() or not cup_data.has("pairings") or (cup_data.pairings as Array).is_empty():
+		_build_cup()
+	else:
+		cup = CupData.from_dict(cup_data)
 	initialized = true
 	return true
 

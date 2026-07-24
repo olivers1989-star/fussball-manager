@@ -23,6 +23,7 @@ var league_name := ""
 var minute := 0
 var full_time := 90        # 120 nach run_extra_time() (K.-o.-Spiele)
 var knockout := false      # K.-o.-Spiel: Abrechnung erst nach Verlängerung
+var neutral := false       # neutraler Platz (Pokalfinale): kein Heimvorteil
 var hg := 0
 var ag := 0
 var events: Array = []      # {min, kind, text}
@@ -137,8 +138,9 @@ func tick() -> void:
 		stats["corners_h" if _rng.randf() < home_share else "corners_a"] += 1
 	if _rng.randf() < 0.24:
 		stats["freekicks_h" if _rng.randf() < home_share else "freekicks_a"] += 1
-	var p_home: float = CHANCE_BASE * (2.0 * rat_h.mid / mid_sum) * HOME_BONUS
-	var p_away: float = CHANCE_BASE * (2.0 * rat_a.mid / mid_sum) * (2.0 - HOME_BONUS)
+	var hb: float = 1.0 if neutral else HOME_BONUS
+	var p_home: float = CHANCE_BASE * (2.0 * rat_h.mid / mid_sum) * hb
+	var p_away: float = CHANCE_BASE * (2.0 * rat_a.mid / mid_sum) * (2.0 - hb)
 
 	if _rng.randf() < p_home:
 		_chance(true, rat_h, rat_a)
@@ -176,14 +178,21 @@ func run_full() -> void:
 	while not finished:
 		tick()
 
-## Verlängerung: zweimal 15 Minuten dranhängen. Nur für K.-o.-Spiele – die
-## Spieler sind da schon platt, entsprechend zäh wird es.
-func run_extra_time() -> void:
+## Startet die Verlängerung (ohne sie durchzuspulen) – für die Live-Anzeige,
+## die danach Minute für Minute weitertickt.
+func begin_extra_time() -> void:
 	if minute < 90:
 		return
 	full_time = 120
 	finished = false
 	_emit("info", "Es geht in die Verlängerung – zweimal 15 Minuten.")
+
+## Verlängerung: zweimal 15 Minuten dranhängen. Nur für K.-o.-Spiele – die
+## Spieler sind da schon platt, entsprechend zäh wird es.
+func run_extra_time() -> void:
+	if minute < 90:
+		return
+	begin_extra_time()
 	while not finished:
 		tick()
 

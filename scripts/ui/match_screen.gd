@@ -68,11 +68,22 @@ var _was_running := false
 var _speech_buttons: Array = []
 var _speech_index := 0
 
+var _is_cup := false
+var _cup_result := {}
+
 func _ready() -> void:
-	if Game.next_fixture(Game.my_club_id).is_empty():
-		get_tree().change_scene_to_file.call_deferred("res://scenes/hub.tscn")
-		return
-	_md = Game.start_matchday()
+	_is_cup = Game.match_context == "cup"
+	if _is_cup:
+		var sim := Game.start_cup_match()
+		if sim == null:
+			get_tree().change_scene_to_file.call_deferred("res://scenes/hub.tscn")
+			return
+		_md = {"mine": sim, "others": []}
+	else:
+		if Game.next_fixture(Game.my_club_id).is_empty():
+			get_tree().change_scene_to_file.call_deferred("res://scenes/hub.tscn")
+			return
+		_md = Game.start_matchday()
 	_my_sim = _md.mine
 	_my_home = _my_sim.home.id == Game.my_club_id
 	_build_ui()
@@ -315,7 +326,8 @@ func _build_scoreboard() -> PanelContainer:
 	center.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_child(center)
 	var md_label := Label.new()
-	md_label.text = "%s · Spieltag %d · %s" % [Game.season_label(), Game.matchday() + 1, Game.my_league().name]
+	md_label.text = ("%s · 🏆 Deutscher Pokal · %s" % [Game.season_label(), _my_sim.league_name.replace("Pokal · ", "")]) if _is_cup \
+		else "%s · Spieltag %d · %s" % [Game.season_label(), Game.matchday() + 1, Game.my_league().name]
 	md_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	md_label.add_theme_font_size_override("font_size", 13)
 	md_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
@@ -394,7 +406,8 @@ func _build_prematch() -> PanelContainer:
 	card.add_child(v)
 
 	var day_label := Label.new()
-	day_label.text = "SPIELTAG %d · %s" % [Game.matchday() + 1, Game.date_label()]
+	day_label.text = ("🏆 POKAL · %s · %s" % [_my_sim.league_name.replace("Pokal · ", "").to_upper(), Game.date_label()]) if _is_cup \
+		else "SPIELTAG %d · %s" % [Game.matchday() + 1, Game.date_label()]
 	day_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	day_label.add_theme_font_size_override("font_size", 13)
 	day_label.add_theme_color_override("font_color", UITheme.TEXT_DIM)
@@ -611,6 +624,11 @@ func _on_tick() -> void:
 		_overlay_message.text = "Halbzeit bei %d:%d – jetzt Wechsel und Positionen anpassen." % [
 			_my_sim.hg if _my_home else _my_sim.ag, _my_sim.ag if _my_home else _my_sim.hg]
 	if _my_sim.finished:
+		# Pokal: bei Gleichstand nach 90 Minuten Verlängerung, dann Elfmeterschießen
+		if _is_cup and _my_sim.hg == _my_sim.ag and _my_sim.full_time == 90:
+			_my_sim.begin_extra_time()
+			_flush_events()
+			return
 		_finish()
 
 func _on_pause_toggle() -> void:
@@ -632,6 +650,8 @@ func _set_paused(paused: bool) -> void:
 
 func _finish_instantly() -> void:
 	_my_sim.run_full()
+	if _is_cup and _my_sim.hg == _my_sim.ag and _my_sim.full_time == 90:
+		_my_sim.run_extra_time()
 	for sim in _md.others:
 		sim.run_full()
 	_flush_events()
@@ -642,6 +662,9 @@ func _finish() -> void:
 	if _post_panel.visible:
 		return
 	_timer.stop()
+	if _is_cup:
+		_finish_cup()
+		return
 	for sim in _md.others:
 		sim.run_full()
 	Game.finish_matchday(_md)
@@ -658,6 +681,78 @@ func _finish() -> void:
 	_post_panel.visible = true
 	_build_report()
 
+## Die übrigen Partien der zuletzt gespielten Pokalrunde als Ergebnisliste.
+func _fill_cup_others(box: VBoxContainer) -> void:
+	if Game.cup == null or Game.cup.history.is_empty():
+		return
+	var last_round: Array = Game.cup.history[Game.cup.history.size() - 1]
+	for p in last_round:
+		if int(p.home) == Game.my_club_id or int(p.away) == Game.my_club_id:
+			continue
+		var row := PanelContainer.new()
+		var sb := UITheme.box(Color(0.09, 0.11, 0.14, 1.0), 5)
+		sb.set_content_margin_all(4)
+		row.add_theme_stylebox_override("panel", sb)
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 5)
+		row.add_child(line)
+		var h := Game.club(int(p.home))
+		var a := Game.club(int(p.away))
+		var hn := Label.new()
+		hn.text = h.short_name
+		hn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hn.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		hn.clip_text = true
+		hn.add_theme_font_size_override("font_size", 12)
+		hn.add_theme_color_override("font_color", UITheme.TEXT if int(p.winner) == h.id else UITheme.TEXT_DIM)
+		line.add_child(hn)
+		line.add_child(UITheme.club_badge(h.short_name, Color(h.color), 18))
+		var extra := ""
+		if bool(p.shootout):
+			extra = " i.E."
+		elif bool(p.extra):
+			extra = " n.V."
+		var score := Label.new()
+		score.text = "%d:%d%s" % [int(p.hg), int(p.ag), extra]
+		score.custom_minimum_size = Vector2(54, 0)
+		score.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		score.add_theme_font_size_override("font_size", 12)
+		line.add_child(score)
+		line.add_child(UITheme.club_badge(a.short_name, Color(a.color), 18))
+		var an := Label.new()
+		an.text = a.short_name
+		an.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		an.clip_text = true
+		an.add_theme_font_size_override("font_size", 12)
+		an.add_theme_color_override("font_color", UITheme.TEXT if int(p.winner) == a.id else UITheme.TEXT_DIM)
+		line.add_child(an)
+		box.add_child(row)
+
+## Abpfiff eines Pokalspiels: bei Gleichstand Elfmeterschießen, dann den Sieger
+## in die nächste Runde tragen und den Bericht anzeigen.
+func _finish_cup() -> void:
+	var pens := [0, 0]
+	if _my_sim.hg == _my_sim.ag:
+		pens = Game._penalty_shootout(_my_sim.home, _my_sim.away)
+	_my_sim.finalize_now()   # falls in 90 Minuten entschieden (sonst schon geschehen)
+	_flush_events()
+	var home_wins: bool = _my_sim.hg > _my_sim.ag or (_my_sim.hg == _my_sim.ag and pens[0] > pens[1])
+	_cup_result = {
+		"hg": _my_sim.hg, "ag": _my_sim.ag, "ph": pens[0], "pa": pens[1],
+		"extra": _my_sim.minute > 90, "shootout": pens[0] + pens[1] > 0,
+		"winner": _my_sim.home.id if home_wins else _my_sim.away.id,
+	}
+	Game.play_cup_round(_cup_result)
+	_minute_label.text = "🏁 Schlusspfiff"
+	_score_label.text = "%d : %d" % [_my_sim.hg, _my_sim.ag]
+	if _overlay != null:
+		_overlay.visible = false
+	_controls_bar.visible = false
+	_live_box.visible = false
+	_scoreboard.visible = false
+	_post_panel.visible = true
+	_build_report()
+
 # ------------------------------------------------------------------ Spielbericht
 
 ## Ausführlicher Bericht nach dem Abpfiff: Torschützen, Spieler des Spiels,
@@ -669,6 +764,11 @@ func _build_report() -> void:
 	var opp_goals: int = _my_sim.ag if _my_home else _my_sim.hg
 	var verdict := "SIEG" if my_goals > opp_goals else ("UNENTSCHIEDEN" if my_goals == opp_goals else "NIEDERLAGE")
 	var verdict_color := UITheme.ACCENT if my_goals > opp_goals else (Color("#facc15") if my_goals == opp_goals else Color("#f87171"))
+	# Im Pokal zählt der Sieger nach Verlängerung/Elfmeterschießen
+	if _is_cup and not _cup_result.is_empty():
+		var i_won: bool = int(_cup_result.winner) == Game.my_club_id
+		verdict = "WEITER" if i_won else "AUSGESCHIEDEN"
+		verdict_color = UITheme.ACCENT if i_won else Color("#f87171")
 
 	# ---------------- Kopf: Endstand als Anzeigetafel
 	_post_panel.add_child(_build_report_head(verdict, verdict_color))
@@ -786,8 +886,8 @@ func _build_report() -> void:
 	for pid in my_players:
 		_ratings_box.add_child(_rating_row(pid))
 
-	# ---------------- Spalte 3: weitere Ergebnisse
-	var others_card := _card_column("📡 Die weiteren Ergebnisse")
+	# ---------------- Spalte 3: weitere Ergebnisse (im Pokal: die anderen Partien der Runde)
+	var others_card := _card_column("🏆 Weitere Pokalspiele" if _is_cup else "📡 Die weiteren Ergebnisse")
 	others_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	columns.add_child(others_card)
 	var others_holder: VBoxContainer = others_card.get_child(0)
@@ -799,6 +899,8 @@ func _build_report() -> void:
 	_other_results.add_theme_constant_override("separation", 2)
 	_other_results.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	others_scroll.add_child(_other_results)
+	if _is_cup:
+		_fill_cup_others(_other_results)
 	var current_league := ""
 	for sim in _md.others:
 		if sim.league_name != current_league:
@@ -816,7 +918,10 @@ func _build_report() -> void:
 	done.add_theme_font_size_override("font_size", 18)
 	done.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	UITheme.make_primary(done)
-	done.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/hub.tscn"))
+	done.pressed.connect(func():
+		if _is_cup:
+			Game.match_context = "league"
+		get_tree().change_scene_to_file("res://scenes/hub.tscn"))
 	_post_panel.add_child(done)
 
 ## Anzeigetafel im Spielbericht: Wappen, Endstand, Ergebnis-Banner und Eckdaten.
@@ -830,7 +935,10 @@ func _build_report_head(verdict: String, verdict_color: Color) -> PanelContainer
 	card.add_child(v)
 
 	var title := Label.new()
-	title.text = "📰 Spielbericht · %s, %d. Spieltag" % [Game.my_league().name, Game.matchday()]
+	if _is_cup:
+		title.text = "🏆 Deutscher Pokal · %s" % _my_sim.league_name.replace("Pokal · ", "")
+	else:
+		title.text = "📰 Spielbericht · %s, %d. Spieltag" % [Game.my_league().name, Game.matchday()]
 	title.add_theme_font_size_override("font_size", 13)
 	title.add_theme_color_override("font_color", UITheme.TEXT_DIM)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -872,6 +980,11 @@ func _build_report_head(verdict: String, verdict_color: Color) -> PanelContainer
 
 	var banner := Label.new()
 	banner.text = verdict
+	if _is_cup and not _cup_result.is_empty():
+		if bool(_cup_result.shootout):
+			banner.text += "  ·  Elfmeterschießen %d:%d" % [int(_cup_result.ph), int(_cup_result.pa)]
+		elif bool(_cup_result.extra):
+			banner.text += "  ·  nach Verlängerung"
 	banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	banner.add_theme_font_size_override("font_size", 15)
 	banner.add_theme_color_override("font_color", verdict_color)

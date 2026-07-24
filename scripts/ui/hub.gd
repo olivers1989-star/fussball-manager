@@ -1,7 +1,7 @@
 extends Control
 ## Manager-Zentrale: Sidebar-Navigation, Kopfleiste mit Vereinsinfos und Inhaltsbereich.
 
-const SCREEN_ORDER := ["Übersicht", "Trainer", "Kalender", "Tabelle", "Spielplan", "Kader", "Aufstellung", "Training", "Transfermarkt", "Finanzen"]
+const SCREEN_ORDER := ["Übersicht", "Trainer", "Kalender", "Tabelle", "Spielplan", "Pokal", "Kader", "Aufstellung", "Training", "Transfermarkt", "Finanzen"]
 
 var _screens := {}        # Titel -> TabBase
 var _nav_buttons := {}    # Titel -> Button
@@ -205,6 +205,7 @@ func _build_ui() -> void:
 		"Kalender": TabKalender.new(),
 		"Tabelle": TabTabelle.new(),
 		"Spielplan": TabSpielplan.new(),
+		"Pokal": TabPokal.new(),
 		"Kader": TabKader.new(),
 		"Aufstellung": TabAufstellung.new(),
 		"Training": TabTraining.new(),
@@ -328,6 +329,8 @@ func update_topbar() -> void:
 	# Aktions-Button je nach Kalenderlage
 	if Game.season_rollover_due():
 		_play_button.text = "🏁  Saison abschließen"
+	elif Game.is_cup_day():
+		_play_button.text = "🏆  Pokalspiel anpfeifen"
 	elif Game.season_over():
 		_play_button.text = "☀  Sommerpause  ⏩"
 	elif Game.my_match_today():
@@ -355,7 +358,12 @@ func _on_play_pressed() -> void:
 	if Game.season_rollover_due():
 		get_tree().change_scene_to_file("res://scenes/saison.tscn")
 		return
+	if Game.is_cup_day():
+		Game.match_context = "cup"
+		get_tree().change_scene_to_file("res://scenes/match.tscn")
+		return
 	if Game.my_match_today():
+		Game.match_context = "league"
 		get_tree().change_scene_to_file("res://scenes/match.tscn")
 		return
 	_start_week_sim()
@@ -477,6 +485,11 @@ func _sim_tick() -> void:
 	if r.get("prep", false):
 		_sim_timer.stop()
 		_show_prep_dialog()
+		return
+	if r.get("cup", false):
+		# Pokalspiel des eigenen Vereins: Wochendurchlauf anhalten
+		_sim_timer.stop()
+		_finish_sim()
 		return
 	if Game.my_match_today():
 		_finish_sim()
